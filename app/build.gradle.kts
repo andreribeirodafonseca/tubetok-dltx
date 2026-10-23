@@ -2,7 +2,9 @@ plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
 android {
  namespace = "com.mediadownloader.app"
  compileSdk = 35
- defaultConfig { applicationId = "com.mediadownloader.app"; minSdk = 26; targetSdk = 28; versionCode = 14; versionName = "1.4" }
+ defaultConfig { applicationId = "com.mediadownloader.app"; minSdk = 26; targetSdk = 28; versionCode = 15; versionName = "1.5" }
+    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+    kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
  implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")
