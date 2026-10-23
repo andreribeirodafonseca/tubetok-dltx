@@ -40,22 +40,46 @@ public class MainActivity extends Activity {
     if(!initialized){send("warning","Motor ainda inicializando.");return;}
     try{
       send("progress","Verificando atualização do yt-dlp...");
+      // Resolve a sobrecarga que recebe Context e UpdateChannel (classe, não enum).
       java.lang.reflect.Method found=null;
       for(java.lang.reflect.Method m:YoutubeDL.class.getMethods()){
-        if(m.getName().equals("updateYoutubeDL")){found=m;break;}
+        if(!m.getName().equals("updateYoutubeDL"))continue;
+        Class<?>[] pt=m.getParameterTypes();
+        boolean hasContext=false,hasChannel=false;
+        for(Class<?> t:pt){
+          if(android.content.Context.class.isAssignableFrom(t))hasContext=true;
+          if(t.getSimpleName().equals("UpdateChannel"))hasChannel=true;
+        }
+        if(hasContext&&hasChannel){found=m;break;}
       }
-      if(found==null)throw new Exception("Esta versão da biblioteca não disponibiliza updateYoutubeDL");
+      if(found==null)throw new Exception("Biblioteca sem atualização compatível (Context + UpdateChannel)");
       Class<?>[] types=found.getParameterTypes();
       Object[] args=new Object[types.length];
       for(int i=0;i<types.length;i++){
         if(android.content.Context.class.isAssignableFrom(types[i]))args[i]=getApplicationContext();
-        else if(types[i].isEnum()){
-          Object[] values=types[i].getEnumConstants();
-          Object choice=null;
-          for(Object value:values)if(value.toString().equalsIgnoreCase("STABLE"))choice=value;
-          args[i]=choice!=null?choice:(values.length>0?values[0]:null);
+        else if(types[i].getSimpleName().equals("UpdateChannel")){
+          // Na biblioteca 0.18.1 UpdateChannel não é um enum Java.
+          // Seus canais são disponibilizados como campos estáticos ou via Companion Kotlin.
+          Object channel=null;
+          for(String name:new String[]{"STABLE","NIGHTLY","MASTER"}){
+            try{java.lang.reflect.Field field=types[i].getField(name);
+              if(java.lang.reflect.Modifier.isStatic(field.getModifiers())){channel=field.get(null);break;}
+            }catch(NoSuchFieldException ignored){}
+          }
+          if(channel==null){
+            try{
+              java.lang.reflect.Field companionField=types[i].getField("Companion");
+              Object companion=companionField.get(null);
+              for(String name:new String[]{"getSTABLE","getNIGHTLY","getMASTER"}){
+                try{channel=companion.getClass().getMethod(name).invoke(companion);break;}
+                catch(NoSuchMethodException ignored){}
+              }
+            }catch(NoSuchFieldException ignored){}
+          }
+          if(channel==null)throw new Exception("Não foi possível obter UpdateChannel.STABLE da biblioteca");
+          args[i]=channel;
         }else if(types[i]==boolean.class || types[i]==Boolean.class)args[i]=false;
-        else throw new Exception("Parâmetro de atualização não suportado: "+types[i].getSimpleName());
+        else throw new Exception("Assinatura não suportada: "+types[i].getName());
       }
       Object result=found.invoke(YoutubeDL.getInstance(),args);
       send("ready","Atualização executada. Resultado: "+String.valueOf(result));
