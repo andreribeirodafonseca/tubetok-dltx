@@ -159,24 +159,82 @@ public class MainActivity extends Activity {
       return model;
     }finally{conn.disconnect();}
   }
+  // Processa blocos completos em WAV PCM 16 kHz mono, com pequena sobreposicao
+  // para preservar palavras nas bordas. Porcentagem so muda ao concluir bloco.
   private void runWhisper(File audio,String lang,File dir)throws Exception{
-    send("progress","Preparando Whisper local (modelo multilíngue base)...");
+    send("stage","Preparando modelo Whisper");
     File model=ensureModel();
-    send("progress","Convertendo áudio para WAV mono 16 kHz...");
+    send("stage","Convertendo áudio para WAV 16 kHz");
     File wav=AudioConverter.convert(audio,new File(dir,"whisper_16k.wav"));
-    send("progress","Reconhecendo fala no celular. Isso pode demorar alguns minutos...");
-    WhisperRunner.Result result=WhisperRunner.transcribe(this,model.getAbsolutePath(),wav.getAbsolutePath(),lang);
-    String txt=result.getText()==null?"":result.getText().trim();
-    if(txt.isEmpty())throw new Exception("Whisper não identificou fala neste áudio.");
-    StringBuilder srt=new StringBuilder();int i=1;
-    for(WhisperRunner.Segment seg:result.getSegments()){
-      srt.append(i++).append("\\n").append(srtTime(seg.getStartMs())).append(" --> ").append(srtTime(seg.getEndMs())).append("\\n").append(seg.getText().trim()).append("\\n\\n");
+    long dataBytes=wav.length()-44;
+    if(dataBytes<=0)throw new IOException("WAV vazio após conversão.");
+    final long bytesPerSecond=32000L; // PCM16, mono, 16000 Hz
+    final long stepBytes=45L*bytesPerSecond;
+    final long overlapBytes=1000L*32L;
+    int total=(int)((dataBytes+stepBytes-1)/stepBytes);
+    if(total<=0||total>100000)throw new IOException("Duração de áudio inválida.");
+    send("stage","Reconhecendo fala por blocos");
+    send("chunk_progress","0|"+total+"|0|0");
+    long begin=System.currentTimeMillis();
+    StringBuilder allText=new StringBuilder();
+    StringBuilder srt=new StringBuilder();
+    int subtitleIndex=1;
+    for(int block=0;block<total;block++){
+      if(Thread.currentThread().isInterrupted())throw new InterruptedException("Transcrição interrompida.");
+      long coreStart=block*stepBytes;
+      long coreEnd=Math.min(dataBytes,coreStart+stepBytes);
+      long chunkStart=Math.max(0,coreStart-overlapBytes);
+      long chunkEnd=Math.min(dataBytes,coreEnd+overlapBytes);
+      File piece=new File(dir,"parte_"+block+".wav");
+      WavChunks.extract(wav,piece,chunkStart,chunkEnd);
+      WhisperRunner.Result result=null;
+      Exception failure=null;
+      try{
+        for(int attempt=1;attempt<=2;attempt++){
+          try{
+            send("block_start",(block+1)+"|"+total+"|"+attempt);
+            result=WhisperRunner.transcribe(this,model.getAbsolutePath(),piece.getAbsolutePath(),lang);
+            failure=null;break;
+          }catch(Exception ex){
+            failure=ex;
+            Log.w("MediaDownloader","Bloco "+(block+1)+" tentativa "+attempt,ex);
+            if(attempt<2)send("stage","Tentando novamente bloco "+(block+1)+" de "+total);
+          }
+        }
+        if(failure!=null)throw new IOException("Falha no bloco "+(block+1)+" de "+total+": "+failure.getMessage(),failure);
+        long offsetMs=chunkStart/32L;
+        long coreStartMs=coreStart/32L;
+        long coreEndMs=coreEnd/32L;
+        // Seleciona segmentos pelo ponto medio para nao duplicar sobreposicoes.
+        for(WhisperRunner.Segment seg:result.getSegments()){
+          long a=offsetMs+seg.getStartMs(),b=offsetMs+seg.getEndMs();
+          long mid=a+(b-a)/2;
+          if(mid<coreStartMs || (mid>=coreEndMs && block<total-1))continue;
+          String t=seg.getText()==null?"":seg.getText().trim();
+          if(t.isEmpty())continue;
+          if(allText.length()>0)allText.append(' ');
+          allText.append(t);
+          long clippedStart=Math.max(coreStartMs,a),clippedEnd=Math.min(coreEndMs,b);
+          if(clippedEnd<=clippedStart){clippedStart=Math.max(0,a);clippedEnd=Math.max(clippedStart+1,b);}
+          srt.append(subtitleIndex++).append("\n").append(srtTime(clippedStart))
+            .append(" --> ").append(srtTime(clippedEnd)).append("\n")
+            .append(t).append("\n\n");
+        }
+        int pct=(int)((block+1)*100L/total);
+        long seconds=(System.currentTimeMillis()-begin)/1000L;
+        send("chunk_progress",(block+1)+"|"+total+"|"+pct+"|"+seconds);
+        // Texto parcial nao deve se perder visualmente se o proximo bloco falhar.
+        send("partial_text",allText.toString());
+      }finally{piece.delete();}
     }
-    String base="MediaDownloader_"+System.currentTimeMillis();
+    String txt=allText.toString().trim();
+    if(txt.isEmpty())throw new IOException("Whisper não identificou fala neste áudio.");
+    send("stage","Salvando TXT e SRT");
+    String name="MediaDownloader_"+System.currentTimeMillis();
     File txtFile=new File(dir,"transcricao.txt"),srtFile=new File(dir,"transcricao.srt");
     try(OutputStream o=new FileOutputStream(txtFile)){o.write(txt.getBytes("UTF-8"));}
     try(OutputStream o=new FileOutputStream(srtFile)){o.write(srt.toString().getBytes("UTF-8"));}
-    saveToDownloads(txtFile,base+".txt");saveToDownloads(srtFile,base+".srt");
+    saveToDownloads(txtFile,name+".txt");saveToDownloads(srtFile,name+".srt");
     send("text",txt);
     send("transcript_saved","TXT e SRT salvos em Downloads/MediaDownloader");
   }
