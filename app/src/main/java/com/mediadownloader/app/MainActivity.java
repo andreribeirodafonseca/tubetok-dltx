@@ -45,7 +45,7 @@ public class MainActivity extends Activity {
       req.addOption("-f","bv*+ba/b");req.addOption("--merge-output-format","mp4");
       req.addOption("--no-playlist");req.addOption("--no-part");
       req.addOption("-o",new File(dir,"video.%(ext)s").getAbsolutePath());
-      YoutubeDL.getInstance().execute(req, (progress, eta, line)->{if(progress>=0)send("progress",String.format(java.util.Locale.US,"Baixando vídeo: %.0f%%",progress));},"video-"+System.currentTimeMillis());
+      YoutubeDL.getInstance().execute(req, (progress, eta)->{if(progress>=0)send("progress",String.format(java.util.Locale.US,"Baixando vídeo: %.0f%%",progress));},"video-"+System.currentTimeMillis());
       File video=null;for(File f:Objects.requireNonNull(dir.listFiles()))if(f.isFile()&&(f.getName().endsWith(".mp4")||f.getName().endsWith(".webm")||f.getName().endsWith(".mkv"))){video=f;break;}
       if(video==null)throw new Exception("Nenhum vídeo encontrado após download.");
       String saved=saveToDownloads(video,"MediaDownloader_"+System.currentTimeMillis()+"."+video.getName().substring(video.getName().lastIndexOf('.')+1));
