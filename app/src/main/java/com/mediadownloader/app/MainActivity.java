@@ -34,8 +34,9 @@ public class MainActivity extends Activity {
     @JavascriptInterface public void copy(String text){runOnUiThread(()->{ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);cb.setPrimaryClip(ClipData.newPlainText("Transcrição",text));Toast.makeText(MainActivity.this,"Texto copiado",Toast.LENGTH_SHORT).show();});}
     @JavascriptInterface public void updateEngine(){pool.execute(()->MainActivity.this.updateEngine(true));}
     @JavascriptInterface public void download(String url,String mode,String lang){pool.execute(()->downloadVideo(url,mode,lang));}
+    @JavascriptInterface public boolean modelReady(){File f=new File(new File(getFilesDir(),"models"),"ggml-base.bin");return f.length()>100_000_000L;}
     @JavascriptInterface public void transcribeLocal(String uri,String lang){pool.execute(()->transcribePickedAudio(uri,lang));}
-    @JavascriptInterface public void prepareModel(){pool.execute(()->{try{ensureModel();send("ready","Whisper pronto para transcrever sem internet.");}catch(Exception e){send("error","Falha ao baixar modelo Whisper: "+e.getMessage());}});}
+    @JavascriptInterface public void prepareModel(){pool.execute(()->{try{ensureModel();send("model_ready","Whisper pronto.");}catch(Exception e){send("error","Falha ao preparar Whisper: "+e.getMessage());}});}
   }
   // API oficial verificada no código-fonte da biblioteca 0.18.1.
   private void updateEngine(boolean manual){
@@ -63,17 +64,19 @@ public class MainActivity extends Activity {
     File dir=new File(getCacheDir(),"videos-"+System.currentTimeMillis());dir.mkdirs();
     try{
       send("progress","Obtendo vídeo do YouTube ou TikTok...");
-      YoutubeDLRequest req=new YoutubeDLRequest(url);
-      req.addOption("-f","best[ext=mp4]/best");
-      req.addOption("--no-playlist");req.addOption("--no-part");
-      req.addOption("-o",new File(dir,"video.%(ext)s").getAbsolutePath());
-      YoutubeDL.getInstance().execute(req, "video-"+System.currentTimeMillis(), (progress, eta, line)->{if(progress>=0)send("progress",String.format(java.util.Locale.US,"Baixando vídeo: %.0f%%",progress));return kotlin.Unit.INSTANCE;});
-      File video=null;for(File f:Objects.requireNonNull(dir.listFiles()))if(f.isFile()&&(f.getName().endsWith(".mp4")||f.getName().endsWith(".webm")||f.getName().endsWith(".mkv"))){video=f;break;}
-      if(video==null)throw new Exception("Nenhum vídeo encontrado após download.");
-      String saved=saveToDownloads(video,"MediaDownloader_"+System.currentTimeMillis()+"."+video.getName().substring(video.getName().lastIndexOf('.')+1));
-      send("saved",saved);
-      if(mode.equals("video_transcribe")){
-        send("progress","Vídeo salvo. Extraindo áudio para o Whisper...");
+      if(mode.equals("video")){
+        YoutubeDLRequest req=new YoutubeDLRequest(url);
+        req.addOption("-f","best[ext=mp4]/best");
+        req.addOption("--no-playlist");req.addOption("--no-part");
+        req.addOption("-o",new File(dir,"video.%(ext)s").getAbsolutePath());
+        YoutubeDL.getInstance().execute(req, "video-"+System.currentTimeMillis(), (progress, eta, line)->{if(progress>=0)send("progress",String.format(java.util.Locale.US,"Baixando vídeo: %.0f%%",progress));return kotlin.Unit.INSTANCE;});
+        File video=null;for(File f:Objects.requireNonNull(dir.listFiles()))if(f.isFile()&&(f.getName().endsWith(".mp4")||f.getName().endsWith(".webm")||f.getName().endsWith(".mkv"))){video=f;break;}
+        if(video==null)throw new Exception("Nenhum vídeo encontrado após download.");
+        String saved=saveToDownloads(video,"MediaDownloader_"+System.currentTimeMillis()+"."+video.getName().substring(video.getName().lastIndexOf('.')+1));
+        send("video_saved",saved);
+      }else if(mode.equals("transcribe")||mode.equals("video_transcribe")){
+        // Transcrição é independente do MP4. Baixa somente o áudio uma vez.
+        send("progress","Obtendo áudio para transcrição...");
         YoutubeDLRequest audioReq=new YoutubeDLRequest(url);
         audioReq.addOption("-f","bestaudio/best");
         audioReq.addOption("-x");
@@ -86,7 +89,7 @@ public class MainActivity extends Activity {
           if(f.getName().startsWith("audio.") && f.isFile()){audio=f;break;}
         if(audio==null)throw new Exception("Não foi possível extrair áudio. Confira o suporte FFmpeg.");
         runWhisper(audio,lang,dir);
-      }
+      }else throw new Exception("Ação não reconhecida: "+mode);
       send("done","Processamento concluído.");
     }catch(Exception ex){
       String raw=String.valueOf(ex.getMessage());
@@ -94,7 +97,9 @@ public class MainActivity extends Activity {
         ?"O TikTok recusou a extracao neste Android. Atualize o motor e tente novamente. Se persistir, a plataforma exige suporte de navegador que pode nao estar disponivel no Android."
         :raw.contains("HTTP Error 403")?"A plataforma recusou o acesso (403). Tente atualizar o motor ou outro link."
         :"Nao foi possivel baixar o video. Verifique o link e a conexao.";
-      send("error",friendly);Log.e("MediaDownloader","download: "+raw,ex);
+      if(mode.equals("video"))send("error",friendly);
+      else send("error","Falha na transcrição: "+(raw.length()>230?raw.substring(0,230):raw));
+      Log.e("MediaDownloader","download: "+raw,ex);
     }
     finally{deleteDirectory(dir);}
   }
@@ -163,7 +168,7 @@ public class MainActivity extends Activity {
     try(OutputStream o=new FileOutputStream(srtFile)){o.write(srt.toString().getBytes("UTF-8"));}
     saveToDownloads(txtFile,base+".txt");saveToDownloads(srtFile,base+".srt");
     send("text",txt);
-    send("saved","Transcrição TXT e SRT salvos em Downloads/MediaDownloader");
+    send("transcript_saved","TXT e SRT salvos em Downloads/MediaDownloader");
   }
   private String srtTime(long ms){
     long h=ms/3600000,m=(ms/60000)%60,sec=(ms/1000)%60,milli=ms%1000;

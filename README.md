@@ -1,5 +1,12 @@
-# Media Downloader Android v1.5 — Build 15
+# Media Downloader Android v1.6 — Build 16
 
-Correção de compilação: Java e Kotlin agora usam JVM 17. Mantido o restante do projeto v1.4, incluindo downloader e código de integração Whisper.
+Projeto completo baseado na v1.5.
 
-**Esta correção resolve apenas o erro de incompatibilidade JVM 1.8/17 mostrado no log.** A compilação e a API de Whisper ainda precisam ser verificadas no Codemagic; podem surgir erros adicionais.
+- Link: **Baixar MP4** (sem Whisper) ou **Transcrever fala** (sem baixar MP4).
+- Transcrição: mostra textarea, botão copiar e salva TXT/SRT em Downloads/MediaDownloader.
+- Arquivo local: área separada para transcrever áudio.
+- Modelo Whisper: baixado automaticamente na primeira transcrição e reutilizado. Removido botão manual.
+- Rodapé simplificado.
+- Corrigida distinção entre erro no download de vídeo e erro na transcrição.
+
+**Atenção:** código ainda não compilado nem validado em aparelho nesta entrega. A extração via FFmpeg e a execução Whisper continuam dependentes de testes reais. O download MP4 reutiliza a implementação validada na v1.2.
