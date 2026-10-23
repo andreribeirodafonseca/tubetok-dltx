@@ -34,6 +34,8 @@ public class MainActivity extends Activity {
     @JavascriptInterface public void copy(String text){runOnUiThread(()->{ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);cb.setPrimaryClip(ClipData.newPlainText("Transcrição",text));Toast.makeText(MainActivity.this,"Texto copiado",Toast.LENGTH_SHORT).show();});}
     @JavascriptInterface public void updateEngine(){pool.execute(()->MainActivity.this.updateEngine(true));}
     @JavascriptInterface public void download(String url,String mode,String lang){pool.execute(()->downloadVideo(url,mode,lang));}
+    @JavascriptInterface public void transcribeLocal(String uri,String lang){pool.execute(()->transcribePickedAudio(uri,lang));}
+    @JavascriptInterface public void prepareModel(){pool.execute(()->{try{ensureModel();send("ready","Whisper pronto para transcrever sem internet.");}catch(Exception e){send("error","Falha ao baixar modelo Whisper: "+e.getMessage());}});}
   }
   // API oficial verificada no código-fonte da biblioteca 0.18.1.
   private void updateEngine(boolean manual){
@@ -71,13 +73,19 @@ public class MainActivity extends Activity {
       String saved=saveToDownloads(video,"MediaDownloader_"+System.currentTimeMillis()+"."+video.getName().substring(video.getName().lastIndexOf('.')+1));
       send("saved",saved);
       if(mode.equals("video_transcribe")){
-        send("progress","Vídeo salvo. Tentando obter legendas da plataforma...");
-        try{
-          YoutubeDLRequest sub=new YoutubeDLRequest(url);sub.addOption("--skip-download");sub.addOption("--write-subs");sub.addOption("--write-auto-subs");sub.addOption("--sub-langs",lang.equals("all")?"pt.*,en.*,es.*":lang+".*");sub.addOption("--convert-subs","srt");sub.addOption("-o",new File(dir,"legenda.%(ext)s").getAbsolutePath());YoutubeDL.getInstance().execute(sub);
-          File srt=null;for(File f:Objects.requireNonNull(dir.listFiles()))if(f.getName().endsWith(".srt")){srt=f;break;}
-          if(srt!=null){String content=read(srt);String txt=content.replaceAll("(?m)^\\d+\\s*$","").replaceAll("(?m)^\\d\\d:\\d\\d:\\d\\d[,.]\\d+\\s+-->.*$","").replaceAll("(?m)^\\s*$","").trim();File t=new File(dir,"transcricao.txt");try(FileOutputStream os=new FileOutputStream(t)){os.write(txt.getBytes("UTF-8"));}saveToDownloads(srt,"MediaDownloader_"+System.currentTimeMillis()+".srt");saveToDownloads(t,"MediaDownloader_"+System.currentTimeMillis()+".txt");send("text",txt);}
-          else send("warning","Vídeo baixado. Não há legendas disponíveis; transcrição por Whisper ainda não integrada.");
-        }catch(Exception ex){send("warning","Vídeo baixado. Legendas indisponíveis: "+ex.getMessage());}
+        send("progress","Vídeo salvo. Extraindo áudio para o Whisper...");
+        YoutubeDLRequest audioReq=new YoutubeDLRequest(url);
+        audioReq.addOption("-f","bestaudio/best");
+        audioReq.addOption("-x");
+        audioReq.addOption("--audio-format","mp3");
+        audioReq.addOption("--no-playlist");
+        audioReq.addOption("-o",new File(dir,"audio.%(ext)s").getAbsolutePath());
+        YoutubeDL.getInstance().execute(audioReq);
+        File audio=null;
+        for(File f:Objects.requireNonNull(dir.listFiles()))
+          if(f.getName().startsWith("audio.") && f.isFile()){audio=f;break;}
+        if(audio==null)throw new Exception("Não foi possível extrair áudio. Confira o suporte FFmpeg.");
+        runWhisper(audio,lang,dir);
       }
       send("done","Processamento concluído.");
     }catch(Exception ex){
@@ -88,7 +96,81 @@ public class MainActivity extends Activity {
         :"Nao foi possivel baixar o video. Verifique o link e a conexao.";
       send("error",friendly);Log.e("MediaDownloader","download: "+raw,ex);
     }
-    finally{File[] files=dir.listFiles();if(files!=null)for(File f:files)f.delete();dir.delete();}
+    finally{deleteDirectory(dir);}
+  }
+  private void transcribePickedAudio(String uri,String lang){
+    File dir=new File(getCacheDir(),"audio-"+System.currentTimeMillis());dir.mkdirs();
+    try{
+      send("progress","Preparando arquivo de áudio...");
+      Uri input=Uri.parse(uri);
+      String mime=getContentResolver().getType(input);
+      String ext="mp3";
+      if(mime!=null){
+        if(mime.contains("ogg"))ext="ogg";
+        else if(mime.contains("wav"))ext="wav";
+        else if(mime.contains("flac"))ext="flac";
+        else if(mime.contains("mp4"))ext="m4a";
+      }
+      File audio=new File(dir,"local."+ext);
+      try(InputStream in=getContentResolver().openInputStream(input);OutputStream out=new FileOutputStream(audio)){
+        if(in==null)throw new IOException("Não foi possível abrir arquivo.");
+        byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n);
+      }
+      runWhisper(audio,lang,dir);
+      send("done","Transcrição concluída.");
+    }catch(Exception e){Log.e("MediaDownloader","local whisper",e);send("error","Falha na transcrição local: "+e.getMessage());}
+    finally{deleteDirectory(dir);}
+  }
+  private File ensureModel() throws Exception {
+    File models=new File(getFilesDir(),"models");models.mkdirs();
+    File model=new File(models,"ggml-base.bin");
+    if(model.length()>100_000_000L)return model;
+    File temp=new File(models,"ggml-base.bin.part");
+    java.net.URL url=new java.net.URL("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin");
+    java.net.HttpURLConnection conn=(java.net.HttpURLConnection)url.openConnection();
+    conn.setConnectTimeout(30000);conn.setReadTimeout(60000);
+    conn.setInstanceFollowRedirects(true);
+    try{
+      if(conn.getResponseCode()!=200)throw new IOException("HTTP "+conn.getResponseCode());
+      long total=conn.getContentLengthLong(),done=0,last=-1;
+      try(InputStream in=conn.getInputStream();OutputStream out=new FileOutputStream(temp)){
+        byte[] b=new byte[65536];int n;
+        while((n=in.read(b))!=-1){
+          out.write(b,0,n);done+=n;
+          long percent=total>0?done*100/total:-1;
+          if(percent!=last){last=percent;send("progress",percent>=0?"Baixando modelo Whisper: "+percent+"%":"Baixando modelo Whisper: "+(done/1048576)+" MB");}
+        }
+      }
+      if(temp.length()<100_000_000L)throw new IOException("Modelo baixado incompleto.");
+      if(!temp.renameTo(model))throw new IOException("Falha ao instalar modelo.");
+      return model;
+    }finally{conn.disconnect();}
+  }
+  private void runWhisper(File audio,String lang,File dir)throws Exception{
+    send("progress","Preparando Whisper local (modelo multilíngue base)...");
+    File model=ensureModel();
+    send("progress","Reconhecendo fala no celular. Isso pode demorar alguns minutos...");
+    WhisperRunner.Result result=WhisperRunner.transcribe(this,model.getAbsolutePath(),audio.getAbsolutePath(),lang);
+    String txt=result.getText()==null?"":result.getText().trim();
+    if(txt.isEmpty())throw new Exception("Whisper não identificou fala neste áudio.");
+    StringBuilder srt=new StringBuilder();int i=1;
+    for(WhisperRunner.Segment seg:result.getSegments()){
+      srt.append(i++).append("\\n").append(srtTime(seg.getStartMs())).append(" --> ").append(srtTime(seg.getEndMs())).append("\\n").append(seg.getText().trim()).append("\\n\\n");
+    }
+    String base="MediaDownloader_"+System.currentTimeMillis();
+    File txtFile=new File(dir,"transcricao.txt"),srtFile=new File(dir,"transcricao.srt");
+    try(OutputStream o=new FileOutputStream(txtFile)){o.write(txt.getBytes("UTF-8"));}
+    try(OutputStream o=new FileOutputStream(srtFile)){o.write(srt.toString().getBytes("UTF-8"));}
+    saveToDownloads(txtFile,base+".txt");saveToDownloads(srtFile,base+".srt");
+    send("text",txt);
+    send("saved","Transcrição TXT e SRT salvos em Downloads/MediaDownloader");
+  }
+  private String srtTime(long ms){
+    long h=ms/3600000,m=(ms/60000)%60,sec=(ms/1000)%60,milli=ms%1000;
+    return String.format(java.util.Locale.US,"%02d:%02d:%02d,%03d",h,m,sec,milli);
+  }
+  private void deleteDirectory(File dir){
+    File[] files=dir.listFiles();if(files!=null)for(File f:files)f.delete();dir.delete();
   }
   private String read(File f)throws Exception{ByteArrayOutputStream out=new ByteArrayOutputStream();try(InputStream in=new FileInputStream(f)){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}return out.toString("UTF-8");}
   private String saveToDownloads(File src,String name)throws Exception{
@@ -97,6 +179,10 @@ public class MainActivity extends Activity {
     Uri uri=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,v);if(uri==null)throw new Exception("Não foi possível criar arquivo em Downloads");
     try(InputStream in=new FileInputStream(src);OutputStream out=getContentResolver().openOutputStream(uri)){byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}return name;
   }
-  @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==PICKER&&pendingFiles!=null){pendingFiles.onReceiveValue(result==RESULT_OK&&data!=null?new Uri[]{data.getData()}:null);pendingFiles=null;}}
+  @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==PICKER&&pendingFiles!=null){
+    Uri chosen=result==RESULT_OK&&data!=null?data.getData():null;
+    pendingFiles.onReceiveValue(chosen!=null?new Uri[]{chosen}:null);
+    if(chosen!=null)send("picked",chosen.toString());
+    pendingFiles=null;}}
   @Override protected void onDestroy(){pool.shutdownNow();super.onDestroy();}
 }

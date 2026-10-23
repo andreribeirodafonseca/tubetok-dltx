@@ -1,16 +1,16 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Media Downloader v1.2</title><link rel="stylesheet" href="style.css"></head><body><main>
-<header><div class="logo">▶</div><div><h1>Media Downloader <small style="font-size:.42em;color:#93b4ff;white-space:nowrap">v1.2</small></h1><p>Baixe ou transforme vídeos e áudios em texto</p></div></header>
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Media Downloader v1.4</title><link rel="stylesheet" href="style.css"></head><body><main>
+<header><div class="logo">▶</div><div><h1>Media Downloader <small style="font-size:.42em;color:#93b4ff;white-space:nowrap">v1.4</small></h1><p>Baixe ou transforme vídeos e áudios em texto</p></div></header>
 <section class="panel">
 <button id="updateEngine" type="button" class="secondary" style="margin-bottom:12px">↻ Atualizar motor yt-dlp</button>
 <div id="notice" class="notice" role="status">Verificando ferramentas...</div>
-<div class="switch" role="group" aria-label="Origem"><button type="button" id="sourceLink" class="active">🔗 Link de vídeo</button><button type="button" id="sourceFile">📁 Arquivo do celular</button></div>
+<div class="switch" role="group" aria-label="Origem"><button type="button" id="sourceLink" class="active">🔗 Link de vídeo</button><button type="button" id="sourceFile">📁 Arquivo de áudio do celular</button></div>
 <div id="linkBox"><label for="url">Link do YouTube ou TikTok</label><input id="url" type="url" placeholder="Cole o link aqui..." autocomplete="off"></div>
-<div id="fileBox" hidden><label for="localAudio">Escolher áudio ou vídeo</label><input id="localAudio" type="file" accept=".mp3,.ogg,.oga,.opus,.wav,.m4a,.aac,.flac,.mp4,.webm,.wma,audio/*,video/mp4,video/webm"><p class="hint">MP3, OGG, WAV, M4A, MP4 e outros • até 250 MB</p></div>
-<div id="actionBox"><label for="mode">O que deseja fazer?</label><select id="mode"><option value="video">Baixar vídeo</option><option value="video_transcribe">Baixar vídeo + transcrever</option></select></div>
+<div id="fileBox" hidden><label for="localAudio">Escolher áudio do celular</label><input id="localAudio" type="file" accept=".mp3,.ogg,.oga,.opus,.wav,.m4a,.aac,.flac,.mp4,.webm,.wma,audio/*,video/mp4,video/webm"><p class="hint">MP3, OGG, WAV, M4A, MP4 e outros • até 250 MB</p></div>
+<button id="prepareModel" type="button" class="secondary" style="margin-bottom:12px">⬇ Preparar Whisper (baixar modelo uma vez)</button><div id="actionBox"><label for="mode">O que deseja fazer?</label><select id="mode"><option value="video">Baixar vídeo — MP4 compatível</option><option value="video_transcribe">Baixar vídeo + transcrever — TXT e SRT</option></select></div>
 <div class="two"><div id="langBox"><label for="lang">Idioma da fala</label><select id="lang"><option value="all">Detectar automaticamente</option><option value="pt">Português</option><option value="en">Inglês</option><option value="es">Espanhol</option></select></div><div id="qualityBox" hidden><label for="quality">Qualidade do vídeo</label><select id="quality"><option value="360">360p</option><option value="720">720p</option><option value="1080" selected>1080p</option><option value="2160">4K</option></select></div></div>
 <button id="start" class="primary" type="button">Transcrever em texto</button>
 <div id="progressBox" hidden><div class="track"><div id="bar"></div></div><p id="progressText" aria-live="polite"></p></div>
 <div id="transcriptBox" hidden><div class="resultTitle"><h2>Texto transcrito</h2><button id="copyText" type="button">Copiar texto</button></div><textarea id="transcriptText" rows="12" readonly></textarea></div>
 <div id="files" class="files"></div>
-</section><p class="foot"><strong>VERSÃO ANDROID 1.2 • BUILD 12 • 23/10/2026</strong><br>Download experimental no Android. Whisper local ainda pendente.</p>
+</section><p class="foot"><strong>VERSÃO ANDROID 1.4 • BUILD 14 • 23/10/2026</strong><br>Whisper local integrado para links e arquivos de áudio. Modelo multilíngue baixado uma vez (~142 MB); processamento no celular.</p>
 </main><script src="app.js"></script></body></html>
