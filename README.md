@@ -1,9 +1,9 @@
-# Media Downloader Android v1.1 — Build 11
+# Media Downloader Android v1.2 — Build 12
 
-Correção pontual do atualizador: `UpdateChannel` na biblioteca youtubedl-android 0.18.1 é uma classe Kotlin, não um enum Java. Agora o app localiza o canal STABLE por campo estático ou Companion, sem assumir que seja enum.
+Correção da API de atualização baseada diretamente no código-fonte da biblioteca `io.github.junkfood02.youtubedl-android:library:0.18.1`.
 
-## Compilação
-Substitua o conteúdo do repositório pelo conteúdo deste pacote e rode o workflow Codemagic. Não foi possível executar a compilação Android neste ambiente; a correção requer validação no aparelho.
+`YoutubeDL.UpdateChannel` é uma classe aninhada de `YoutubeDL`, e o canal estável é disponibilizado como `YoutubeDL.UpdateChannel._STABLE`. A chamada agora usa diretamente `YoutubeDL.getInstance().updateYoutubeDL(getApplicationContext(), YoutubeDL.UpdateChannel._STABLE)`; não usa reflexão.
 
-## Limitações
-A atualização ainda pode falhar por rede, compatibilidade ou restrições do motor. O erro de extração do TikTok não está comprovadamente resolvido. Whisper local e transcrição de arquivos de áudio ainda não foram implementados.
+O aplicativo mostra o resultado e a versão após a atualização. Compilação e funcionamento do TikTok ainda não foram verificados em dispositivo. Whisper local continua não implementado.
+
+Código-fonte verificado: https://github.com/yausername/youtubedl-android/blob/0.18.1/library/src/main/java/com/yausername/youtubedl_android/YoutubeDL.kt
