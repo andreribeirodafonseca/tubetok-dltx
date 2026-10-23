@@ -32,7 +32,7 @@ public class MainActivity extends Activity {
   }
   public class Bridge {
     @JavascriptInterface public void copy(String text){runOnUiThread(()->{ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);cb.setPrimaryClip(ClipData.newPlainText("Transcrição",text));Toast.makeText(MainActivity.this,"Texto copiado",Toast.LENGTH_SHORT).show();});}
-    @JavascriptInterface public void updateEngine(){pool.execute(()->updateEngine(true));}
+    @JavascriptInterface public void updateEngine(){pool.execute(()->MainActivity.this.updateEngine(true));}
     @JavascriptInterface public void download(String url,String mode,String lang){pool.execute(()->downloadVideo(url,mode,lang));}
   }
   // Atualiza o yt-dlp sem recompilar o APK. Reflexao evita dependencia de assinatura da API.
