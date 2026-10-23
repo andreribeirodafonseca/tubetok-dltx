@@ -35,22 +35,36 @@ public class MainActivity extends Activity {
     @JavascriptInterface public void updateEngine(){pool.execute(()->MainActivity.this.updateEngine(true));}
     @JavascriptInterface public void download(String url,String mode,String lang){pool.execute(()->downloadVideo(url,mode,lang));}
   }
-  // Atualiza o yt-dlp sem recompilar o APK. Reflexao evita dependencia de assinatura da API.
-  @SuppressWarnings({"unchecked", "rawtypes"})
+  // Descobre a assinatura real do atualizador da biblioteca instalada.
   private void updateEngine(boolean manual){
     if(!initialized){send("warning","Motor ainda inicializando.");return;}
     try{
-      send("progress","Consultando atualizacao do yt-dlp...");
-      Class<?> channelClass;
-      try { channelClass=Class.forName("com.yausername.youtubedl_android.YoutubeDL$UpdateChannel"); }
-      catch(ClassNotFoundException missing){channelClass=Class.forName("com.yausername.youtubedl_android.UpdateChannel");}
-      Object stable=Enum.valueOf((Class<? extends Enum>)channelClass.asSubclass(Enum.class),"STABLE");
-      java.lang.reflect.Method method=YoutubeDL.class.getMethod("updateYoutubeDL",android.content.Context.class,channelClass);
-      method.invoke(YoutubeDL.getInstance(),getApplicationContext(),stable);
-      send("ready","yt-dlp atualizado/verificado. Pode tentar o download.");
+      send("progress","Verificando atualização do yt-dlp...");
+      java.lang.reflect.Method found=null;
+      for(java.lang.reflect.Method m:YoutubeDL.class.getMethods()){
+        if(m.getName().equals("updateYoutubeDL")){found=m;break;}
+      }
+      if(found==null)throw new Exception("Esta versão da biblioteca não disponibiliza updateYoutubeDL");
+      Class<?>[] types=found.getParameterTypes();
+      Object[] args=new Object[types.length];
+      for(int i=0;i<types.length;i++){
+        if(android.content.Context.class.isAssignableFrom(types[i]))args[i]=getApplicationContext();
+        else if(types[i].isEnum()){
+          Object[] values=types[i].getEnumConstants();
+          Object choice=null;
+          for(Object value:values)if(value.toString().equalsIgnoreCase("STABLE"))choice=value;
+          args[i]=choice!=null?choice:(values.length>0?values[0]:null);
+        }else if(types[i]==boolean.class || types[i]==Boolean.class)args[i]=false;
+        else throw new Exception("Parâmetro de atualização não suportado: "+types[i].getSimpleName());
+      }
+      Object result=found.invoke(YoutubeDL.getInstance(),args);
+      send("ready","Atualização executada. Resultado: "+String.valueOf(result));
     }catch(Exception ex){
-      Log.w("MediaDownloader","Atualizacao indisponivel",ex);
-      send("warning","Nao foi possivel atualizar yt-dlp. O motor instalado ainda pode funcionar. "+(manual?"Verifique a internet.":"Tente Atualizar motor."));
+      Throwable cause=ex instanceof java.lang.reflect.InvocationTargetException && ex.getCause()!=null?ex.getCause():ex;
+      Log.e("MediaDownloader","Falha na atualização",cause);
+      String detail=String.valueOf(cause.getMessage());
+      if(detail.length()>280)detail=detail.substring(0,280);
+      send("warning","Falha ao atualizar yt-dlp: "+cause.getClass().getSimpleName()+" — "+detail);
     }
   }
   private void downloadVideo(String url,String mode,String lang){
