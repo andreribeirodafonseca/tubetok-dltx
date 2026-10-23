@@ -1,0 +1,15 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Media Downloader</title><link rel="stylesheet" href="style.css"></head><body><main>
+<header><div class="logo">▶</div><div><h1>Media Downloader</h1><p>Baixe ou transforme vídeos e áudios em texto</p></div></header>
+<section class="panel">
+<div id="notice" class="notice" role="status">Verificando ferramentas...</div>
+<div class="switch" role="group" aria-label="Origem"><button type="button" id="sourceLink" class="active">🔗 Link de vídeo</button><button type="button" id="sourceFile">📁 Arquivo do computador</button></div>
+<div id="linkBox"><label for="url">Link do YouTube ou TikTok</label><input id="url" type="url" placeholder="Cole o link aqui..." autocomplete="off"></div>
+<div id="fileBox" hidden><label for="localAudio">Escolher áudio ou vídeo</label><input id="localAudio" type="file" accept=".mp3,.ogg,.oga,.opus,.wav,.m4a,.aac,.flac,.mp4,.webm,.wma,audio/*,video/mp4,video/webm"><p class="hint">MP3, OGG, WAV, M4A, MP4 e outros • até 250 MB</p></div>
+<div id="actionBox"><label for="mode">O que deseja fazer?</label><select id="mode"><option value="video">Baixar vídeo</option><option value="video_transcribe">Baixar vídeo + transcrever</option></select></div>
+<div class="two"><div id="langBox"><label for="lang">Idioma da fala</label><select id="lang"><option value="all">Detectar automaticamente</option><option value="pt">Português</option><option value="en">Inglês</option><option value="es">Espanhol</option></select></div><div id="qualityBox" hidden><label for="quality">Qualidade do vídeo</label><select id="quality"><option value="360">360p</option><option value="720">720p</option><option value="1080" selected>1080p</option><option value="2160">4K</option></select></div></div>
+<button id="start" class="primary" type="button">Transcrever em texto</button>
+<div id="progressBox" hidden><div class="track"><div id="bar"></div></div><p id="progressText" aria-live="polite"></p></div>
+<div id="transcriptBox" hidden><div class="resultTitle"><h2>Texto transcrito</h2><button id="copyText" type="button">Copiar texto</button></div><textarea id="transcriptText" rows="12" readonly></textarea></div>
+<div id="files" class="files"></div>
+</section><p class="foot">Projeto Android inicial: interface apenas. Download e Whisper ainda não integrados.</p>
+</main><script src="app.js"></script></body></html>
