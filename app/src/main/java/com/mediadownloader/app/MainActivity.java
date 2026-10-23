@@ -9,6 +9,12 @@ import android.net.Uri;
 import android.widget.Toast;
 import android.util.Log;
 import android.provider.MediaStore;
+import android.media.MediaCodec;
+import android.media.MediaExtractor;
+import android.media.MediaFormat;
+import android.media.AudioFormat;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.io.*;
 import java.util.concurrent.*;
 import java.util.*;
@@ -156,8 +162,10 @@ public class MainActivity extends Activity {
   private void runWhisper(File audio,String lang,File dir)throws Exception{
     send("progress","Preparando Whisper local (modelo multilíngue base)...");
     File model=ensureModel();
+    send("progress","Convertendo áudio para WAV mono 16 kHz...");
+    File wav=AudioConverter.convert(audio,new File(dir,"whisper_16k.wav"));
     send("progress","Reconhecendo fala no celular. Isso pode demorar alguns minutos...");
-    WhisperRunner.Result result=WhisperRunner.transcribe(this,model.getAbsolutePath(),audio.getAbsolutePath(),lang);
+    WhisperRunner.Result result=WhisperRunner.transcribe(this,model.getAbsolutePath(),wav.getAbsolutePath(),lang);
     String txt=result.getText()==null?"":result.getText().trim();
     if(txt.isEmpty())throw new Exception("Whisper não identificou fala neste áudio.");
     StringBuilder srt=new StringBuilder();int i=1;
@@ -177,7 +185,7 @@ public class MainActivity extends Activity {
     return String.format(java.util.Locale.US,"%02d:%02d:%02d,%03d",h,m,sec,milli);
   }
   private void deleteDirectory(File dir){
-    File[] files=dir.listFiles();if(files!=null)for(File f:files)f.delete();dir.delete();
+    File[] files=dir.listFiles();if(files!=null)for(File f:files){if(f.isDirectory())deleteDirectory(f);else f.delete();}dir.delete();
   }
   private String read(File f)throws Exception{ByteArrayOutputStream out=new ByteArrayOutputStream();try(InputStream in=new FileInputStream(f)){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}return out.toString("UTF-8");}
   private String saveToDownloads(File src,String name)throws Exception{

@@ -1,7 +1,9 @@
-# Media Downloader Android v1.7 — Build 17
+# Media Downloader Android v1.8 — Build 18
 
-Corrige erro `ffprobe and ffmpeg not found` na transcrição por link removendo o pós-processador `-x` / `--audio-format mp3` do yt-dlp. Em vez disso, tenta baixar a trilha de áudio diretamente (preferência M4A/AAC).
+Correção de transcrição: o áudio baixado (M4A/AAC/WebM/Opus, conforme suporte de decodificação do dispositivo) é convertido localmente com MediaExtractor + MediaCodec para WAV PCM16 mono 16 kHz, antes de chamar o Whisper.
 
-**Limitação importante:** isso corrige a dependência ausente na etapa de download de áudio, mas a biblioteca Whisper ainda precisa aceitar o formato recebido. Se receber WebM/Opus ou AAC não suportado, é necessária conversão para PCM com decodificador Android/FFmpeg integrado, que ainda não foi implementada.
+O download de MP4 continua em fluxo independente, preservado da v1.7. TXT, SRT, copiar texto e transcrição de arquivo local continuam disponíveis.
 
-Downloads de MP4 preservados; transcrição Whisper, TXT/SRT e áudio local continuam experimentais. Não houve compilação nem teste Android nesta entrega.
+A conversão usa arquivo PCM intermediário no cache, evitando acumular áudio inteiro em memória. Implementa downmix mono e reamostragem linear. Para áudio muito longo, o limite WAV RIFF de ~2 GB é respeitado.
+
+**Importante:** código-fonte preparado, mas não compilado nem testado em dispositivo nesta sessão. A compatibilidade de contêineres/codecs depende dos decodificadores do Android do aparelho. A biblioteca Whisper existente não foi alterada.
