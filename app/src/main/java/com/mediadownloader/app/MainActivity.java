@@ -28,11 +28,30 @@ public class MainActivity extends Activity {
     web.addJavascriptInterface(new Bridge(),"AndroidBridge");web.setWebViewClient(new WebViewClient());
     web.setWebChromeClient(new WebChromeClient(){@Override public boolean onShowFileChooser(WebView v,ValueCallback<Uri[]> callback,FileChooserParams params){pendingFiles=callback;Intent i=new Intent(Intent.ACTION_GET_CONTENT);i.setType("audio/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(Intent.createChooser(i,"Escolher áudio"),PICKER);return true;}});
     web.loadUrl("file:///android_asset/index.html");
-    pool.execute(()->{try{YoutubeDL.getInstance().init(getApplicationContext());initialized=true;send("ready","Motor de download inicializado no celular.");}catch(Exception e){send("error","Falha ao iniciar bibliotecas: "+e.getMessage());}});
+    pool.execute(()->{try{YoutubeDL.getInstance().init(getApplicationContext());initialized=true;send("ready","Motor inicializado. Atualizando yt-dlp...");updateEngine(false);}catch(Exception e){send("error","Falha ao iniciar bibliotecas: "+e.getMessage());}});
   }
   public class Bridge {
     @JavascriptInterface public void copy(String text){runOnUiThread(()->{ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);cb.setPrimaryClip(ClipData.newPlainText("Transcrição",text));Toast.makeText(MainActivity.this,"Texto copiado",Toast.LENGTH_SHORT).show();});}
+    @JavascriptInterface public void updateEngine(){pool.execute(()->updateEngine(true));}
     @JavascriptInterface public void download(String url,String mode,String lang){pool.execute(()->downloadVideo(url,mode,lang));}
+  }
+  // Atualiza o yt-dlp sem recompilar o APK. Reflexao evita dependencia de assinatura da API.
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  private void updateEngine(boolean manual){
+    if(!initialized){send("warning","Motor ainda inicializando.");return;}
+    try{
+      send("progress","Consultando atualizacao do yt-dlp...");
+      Class<?> channelClass;
+      try { channelClass=Class.forName("com.yausername.youtubedl_android.YoutubeDL$UpdateChannel"); }
+      catch(ClassNotFoundException missing){channelClass=Class.forName("com.yausername.youtubedl_android.UpdateChannel");}
+      Object stable=Enum.valueOf((Class<? extends Enum>)channelClass.asSubclass(Enum.class),"STABLE");
+      java.lang.reflect.Method method=YoutubeDL.class.getMethod("updateYoutubeDL",android.content.Context.class,channelClass);
+      method.invoke(YoutubeDL.getInstance(),getApplicationContext(),stable);
+      send("ready","yt-dlp atualizado/verificado. Pode tentar o download.");
+    }catch(Exception ex){
+      Log.w("MediaDownloader","Atualizacao indisponivel",ex);
+      send("warning","Nao foi possivel atualizar yt-dlp. O motor instalado ainda pode funcionar. "+(manual?"Verifique a internet.":"Tente Atualizar motor."));
+    }
   }
   private void downloadVideo(String url,String mode,String lang){
     if(!initialized){send("error","Motor ainda não foi inicializado.");return;}
@@ -41,7 +60,7 @@ public class MainActivity extends Activity {
     try{
       send("progress","Obtendo vídeo do YouTube ou TikTok...");
       YoutubeDLRequest req=new YoutubeDLRequest(url);
-      req.addOption("-f","bv*+ba/b");req.addOption("--merge-output-format","mp4");
+      req.addOption("-f","best[ext=mp4]/best");
       req.addOption("--no-playlist");req.addOption("--no-part");
       req.addOption("-o",new File(dir,"video.%(ext)s").getAbsolutePath());
       YoutubeDL.getInstance().execute(req, "video-"+System.currentTimeMillis(), (progress, eta, line)->{if(progress>=0)send("progress",String.format(java.util.Locale.US,"Baixando vídeo: %.0f%%",progress));return kotlin.Unit.INSTANCE;});
@@ -59,7 +78,14 @@ public class MainActivity extends Activity {
         }catch(Exception ex){send("warning","Vídeo baixado. Legendas indisponíveis: "+ex.getMessage());}
       }
       send("done","Processamento concluído.");
-    }catch(Exception ex){send("error","Falha no download: "+ex.getMessage());Log.e("MediaDownloader","download",ex);}
+    }catch(Exception ex){
+      String raw=String.valueOf(ex.getMessage());
+      String friendly=raw.contains("Unable to extract webpage video data")||raw.contains("impersonat")
+        ?"O TikTok recusou a extracao neste Android. Atualize o motor e tente novamente. Se persistir, a plataforma exige suporte de navegador que pode nao estar disponivel no Android."
+        :raw.contains("HTTP Error 403")?"A plataforma recusou o acesso (403). Tente atualizar o motor ou outro link."
+        :"Nao foi possivel baixar o video. Verifique o link e a conexao.";
+      send("error",friendly);Log.e("MediaDownloader","download: "+raw,ex);
+    }
     finally{File[] files=dir.listFiles();if(files!=null)for(File f:files)f.delete();dir.delete();}
   }
   private String read(File f)throws Exception{ByteArrayOutputStream out=new ByteArrayOutputStream();try(InputStream in=new FileInputStream(f)){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}return out.toString("UTF-8");}

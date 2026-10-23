@@ -1,7 +1,7 @@
-Media Downloader Android v0.7 — Build 7
+# Media Downloader Android v0.8 — Atualizador yt-dlp
 
-Correção do callback de progresso de YoutubeDL.execute: retorna kotlin.Unit.INSTANCE, exigido pela interface Kotlin Function3.
+Correcoes: tentativa de atualizar yt-dlp na inicializacao e por botao; mensagens curtas em portugues; formato MP4 preferido para reduzir dependencias de mesclagem; versao 0.8 Build 8.
 
-Enviar os arquivos extraídos ao GitHub e recompilar pelo Codemagic.
+**Limites importantes:** TikTok pode exigir impersonation/curl_cffi que nao esta disponivel neste runtime Android. A atualizacao do yt-dlp nao garante que TikTok funcione. Whisper e transcricao local continuam pendentes. Projeto nao compilado nem testado em dispositivo neste ambiente. Use o Codemagic e envie o log se falhar.
 
-Não foi compilado/testado neste ambiente. Download experimental; transcrição Whisper local ainda não implementada.
+Nao contem Cloudflare, chaves ou banco remoto. O app consulta a internet para downloads e atualizacao do yt-dlp.

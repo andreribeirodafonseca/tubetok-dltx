@@ -6,3 +6,5 @@ $('start').onclick=()=>{if(fileMode){notice('A transcrição local de arquivos p
 window.nativeEvent=(type,message)=>{if(type==='ready'||type==='progress'||type==='warning')notice(message,type==='warning');if(type==='saved'){$('files').textContent='Vídeo salvo em Downloads/MediaDownloader: '+message;}if(type==='text'){$('transcriptText').value=message;$('transcriptBox').hidden=false;}if(type==='error'||type==='done'){$('start').disabled=false;notice(message,type==='error');}};
 $('copyText').onclick=()=>{let text=$('transcriptText').value;if(window.AndroidBridge)AndroidBridge.copy(text);else navigator.clipboard?.writeText(text)};
 notice('Inicializando bibliotecas Android...');update();
+
+$("updateEngine").onclick=()=>{if(window.AndroidBridge){notice("Atualizando yt-dlp...");AndroidBridge.updateEngine();}else notice("Abra no Android.",true);};
