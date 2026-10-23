@@ -37,6 +37,7 @@ public final class AudioConverter {
       int channels=format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)?format.getInteger(MediaFormat.KEY_CHANNEL_COUNT):1;
       int encoding=AudioFormat.ENCODING_PCM_16BIT;
       long lastProgress=System.currentTimeMillis();
+      long conversionStarted=lastProgress;
       try(OutputStream out=new BufferedOutputStream(new FileOutputStream(pcm))){
         while(!outputDone){
           if(!inputDone){
@@ -72,6 +73,8 @@ public final class AudioConverter {
             outputDone=(info.flags&MediaCodec.BUFFER_FLAG_END_OF_STREAM)!=0;
             codec.releaseOutputBuffer(index,false);
           }
+          if(Thread.currentThread().isInterrupted())throw new IOException("Conversão cancelada");
+          if(System.currentTimeMillis()-conversionStarted>600000)throw new IOException("Conversão excedeu 10 minutos");
           if(System.currentTimeMillis()-lastProgress>120000)throw new IOException("Tempo limite ao decodificar áudio");
           if(index>=0)lastProgress=System.currentTimeMillis();
         }
@@ -90,29 +93,36 @@ public final class AudioConverter {
     if(frames==0)throw new IOException("Áudio decodificado vazio");
     long outFrames=(frames*16000L)/rate;
     if(outFrames<=0||outFrames>0x7fffffffL/2-36)throw new IOException("Áudio excede o tamanho WAV permitido");
-    try(RandomAccessFile in=new RandomAccessFile(pcm,"r");OutputStream out=new BufferedOutputStream(new FileOutputStream(wav))){
+    // Sequential buffered reads: avoid RandomAccessFile.seek() for each output sample.
+    // That approach caused millions of disk seeks and appeared to freeze on long videos.
+    try(InputStream in=new BufferedInputStream(new FileInputStream(pcm),256*1024);
+        OutputStream out=new BufferedOutputStream(new FileOutputStream(wav),256*1024)){
       writeWavHeader(out,(int)(outFrames*2));
-      long prevIndex=-1;
-      float previous=0,next=0;
+      byte[] frame=new byte[channels*2];
+      float current=readMonoSequential(in,frame,channels);
+      float next=frames>1?readMonoSequential(in,frame,channels):current;
+      long currentIndex=0;
       for(long i=0;i<outFrames;i++){
+        if(Thread.currentThread().isInterrupted())throw new IOException("Conversão cancelada");
         double pos=i*(double)rate/16000.0;
         long idx=Math.min((long)pos,frames-1);
-        if(idx!=prevIndex){
-          previous=readMono(in,idx,channels);
-          next=readMono(in,Math.min(idx+1,frames-1),channels);
-          prevIndex=idx;
+        while(currentIndex<idx){
+          current=next;
+          currentIndex++;
+          next=currentIndex+1<frames?readMonoSequential(in,frame,channels):current;
         }
         double frac=pos-idx;
-        int sample=Math.round((float)(previous+(next-previous)*frac));
+        int sample=Math.round((float)(current+(next-current)*frac));
         write16(out,(short)Math.max(Short.MIN_VALUE,Math.min(Short.MAX_VALUE,sample)));
       }
     }
   }
-  private static float readMono(RandomAccessFile in,long frame,int channels)throws IOException{
-    in.seek(frame*channels*2L);
+  private static float readMonoSequential(InputStream in,byte[] frame,int channels)throws IOException{
+    int n=0;
+    while(n<frame.length){int r=in.read(frame,n,frame.length-n);if(r<0)throw new EOFException("Áudio PCM incompleto");n+=r;}
     int sum=0;
     for(int c=0;c<channels;c++){
-      int lo=in.readUnsignedByte(),hi=in.readUnsignedByte();
+      int lo=frame[c*2]&255,hi=frame[c*2+1]&255;
       sum+=(short)((hi<<8)|lo);
     }
     return sum/(float)channels;
