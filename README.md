@@ -1,7 +1,7 @@
-Media Downloader Android v0.6 — correção de compilação Java.
+Media Downloader Android v0.7 — Build 7
 
-Alterações: remove import/inicialização FFmpeg com classe inexistente; corrige assinatura YoutubeDL.execute(request, processId, callback com 3 parâmetros).
+Correção do callback de progresso de YoutubeDL.execute: retorna kotlin.Unit.INSTANCE, exigido pela interface Kotlin Function3.
 
-A biblioteca ffmpeg permanece como dependência Gradle para operações de merge do yt-dlp.
+Enviar os arquivos extraídos ao GitHub e recompilar pelo Codemagic.
 
-Não compilado/testado em Android neste ambiente. Whisper local ainda não integrado.
+Não foi compilado/testado neste ambiente. Download experimental; transcrição Whisper local ainda não implementada.
