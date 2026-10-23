@@ -2,7 +2,7 @@ plugins { id("com.android.application") }
 android {
  namespace = "com.mediadownloader.app"
  compileSdk = 35
- defaultConfig { applicationId = "com.mediadownloader.app"; minSdk = 26; targetSdk = 28; versionCode = 5; versionName = "0.5" }
+ defaultConfig { applicationId = "com.mediadownloader.app"; minSdk = 26; targetSdk = 28; versionCode = 6; versionName = "0.6" }
 }
 dependencies {
  implementation("io.github.junkfood02.youtubedl-android:library:0.18.1")

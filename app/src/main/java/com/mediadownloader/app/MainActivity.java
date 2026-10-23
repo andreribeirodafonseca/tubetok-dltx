@@ -15,7 +15,6 @@ import java.util.*;
 import com.yausername.youtubedl_android.YoutubeDL;
 import com.yausername.youtubedl_android.YoutubeDLRequest;
 import com.yausername.youtubedl_android.YoutubeDLException;
-import com.yausername.youtubedl_android.FFmpeg;
 
 public class MainActivity extends Activity {
   private WebView web;
@@ -29,7 +28,7 @@ public class MainActivity extends Activity {
     web.addJavascriptInterface(new Bridge(),"AndroidBridge");web.setWebViewClient(new WebViewClient());
     web.setWebChromeClient(new WebChromeClient(){@Override public boolean onShowFileChooser(WebView v,ValueCallback<Uri[]> callback,FileChooserParams params){pendingFiles=callback;Intent i=new Intent(Intent.ACTION_GET_CONTENT);i.setType("audio/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(Intent.createChooser(i,"Escolher áudio"),PICKER);return true;}});
     web.loadUrl("file:///android_asset/index.html");
-    pool.execute(()->{try{YoutubeDL.getInstance().init(getApplicationContext());FFmpeg.getInstance().init(getApplicationContext());initialized=true;send("ready","Motor de download inicializado no celular.");}catch(Exception e){send("error","Falha ao iniciar bibliotecas: "+e.getMessage());}});
+    pool.execute(()->{try{YoutubeDL.getInstance().init(getApplicationContext());initialized=true;send("ready","Motor de download inicializado no celular.");}catch(Exception e){send("error","Falha ao iniciar bibliotecas: "+e.getMessage());}});
   }
   public class Bridge {
     @JavascriptInterface public void copy(String text){runOnUiThread(()->{ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);cb.setPrimaryClip(ClipData.newPlainText("Transcrição",text));Toast.makeText(MainActivity.this,"Texto copiado",Toast.LENGTH_SHORT).show();});}
@@ -45,7 +44,7 @@ public class MainActivity extends Activity {
       req.addOption("-f","bv*+ba/b");req.addOption("--merge-output-format","mp4");
       req.addOption("--no-playlist");req.addOption("--no-part");
       req.addOption("-o",new File(dir,"video.%(ext)s").getAbsolutePath());
-      YoutubeDL.getInstance().execute(req, (progress, eta)->{if(progress>=0)send("progress",String.format(java.util.Locale.US,"Baixando vídeo: %.0f%%",progress));},"video-"+System.currentTimeMillis());
+      YoutubeDL.getInstance().execute(req, "video-"+System.currentTimeMillis(), (progress, eta, line)->{if(progress>=0)send("progress",String.format(java.util.Locale.US,"Baixando vídeo: %.0f%%",progress));});
       File video=null;for(File f:Objects.requireNonNull(dir.listFiles()))if(f.isFile()&&(f.getName().endsWith(".mp4")||f.getName().endsWith(".webm")||f.getName().endsWith(".mkv"))){video=f;break;}
       if(video==null)throw new Exception("Nenhum vídeo encontrado após download.");
       String saved=saveToDownloads(video,"MediaDownloader_"+System.currentTimeMillis()+"."+video.getName().substring(video.getName().lastIndexOf('.')+1));

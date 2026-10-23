@@ -1,7 +1,7 @@
-# Media Downloader Android v0.5 — correção AndroidX
+Media Downloader Android v0.6 — correção de compilação Java.
 
-Adicionado `gradle.properties` na raiz com `android.useAndroidX=true` e `android.enableJetifier=true`, exigidos pelas dependências AndroidX do youtubedl-android.
+Alterações: remove import/inicialização FFmpeg com classe inexistente; corrige assinatura YoutubeDL.execute(request, processId, callback com 3 parâmetros).
 
-Envie também o novo arquivo `gradle.properties` ao GitHub, junto com os demais arquivos alterados. Compile novamente no Codemagic.
+A biblioteca ffmpeg permanece como dependência Gradle para operações de merge do yt-dlp.
 
-Esta versão não integra Whisper local; download Android permanece experimental e não foi validado em dispositivo.
+Não compilado/testado em Android neste ambiente. Whisper local ainda não integrado.
