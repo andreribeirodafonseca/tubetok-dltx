@@ -1,12 +1,7 @@
-# Media Downloader Android v1.6 — Build 16
+# Media Downloader Android v1.7 — Build 17
 
-Projeto completo baseado na v1.5.
+Corrige erro `ffprobe and ffmpeg not found` na transcrição por link removendo o pós-processador `-x` / `--audio-format mp3` do yt-dlp. Em vez disso, tenta baixar a trilha de áudio diretamente (preferência M4A/AAC).
 
-- Link: **Baixar MP4** (sem Whisper) ou **Transcrever fala** (sem baixar MP4).
-- Transcrição: mostra textarea, botão copiar e salva TXT/SRT em Downloads/MediaDownloader.
-- Arquivo local: área separada para transcrever áudio.
-- Modelo Whisper: baixado automaticamente na primeira transcrição e reutilizado. Removido botão manual.
-- Rodapé simplificado.
-- Corrigida distinção entre erro no download de vídeo e erro na transcrição.
+**Limitação importante:** isso corrige a dependência ausente na etapa de download de áudio, mas a biblioteca Whisper ainda precisa aceitar o formato recebido. Se receber WebM/Opus ou AAC não suportado, é necessária conversão para PCM com decodificador Android/FFmpeg integrado, que ainda não foi implementada.
 
-**Atenção:** código ainda não compilado nem validado em aparelho nesta entrega. A extração via FFmpeg e a execução Whisper continuam dependentes de testes reais. O download MP4 reutiliza a implementação validada na v1.2.
+Downloads de MP4 preservados; transcrição Whisper, TXT/SRT e áudio local continuam experimentais. Não houve compilação nem teste Android nesta entrega.

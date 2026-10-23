@@ -78,16 +78,18 @@ public class MainActivity extends Activity {
         // Transcrição é independente do MP4. Baixa somente o áudio uma vez.
         send("progress","Obtendo áudio para transcrição...");
         YoutubeDLRequest audioReq=new YoutubeDLRequest(url);
-        audioReq.addOption("-f","bestaudio/best");
-        audioReq.addOption("-x");
-        audioReq.addOption("--audio-format","mp3");
+        // Evita o pós-processador --extract-audio, que exige executáveis
+        // ffmpeg/ffprobe que não estão disponíveis no PATH do Android.
+        // Preferir áudio AAC/M4A já disponibilizado pela plataforma.
+        audioReq.addOption("-f","bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio[ext=mp3]/bestaudio");
         audioReq.addOption("--no-playlist");
         audioReq.addOption("-o",new File(dir,"audio.%(ext)s").getAbsolutePath());
         YoutubeDL.getInstance().execute(audioReq);
         File audio=null;
         for(File f:Objects.requireNonNull(dir.listFiles()))
           if(f.getName().startsWith("audio.") && f.isFile()){audio=f;break;}
-        if(audio==null)throw new Exception("Não foi possível extrair áudio. Confira o suporte FFmpeg.");
+        if(audio==null)throw new Exception("O áudio não foi localizado após o download.");
+        send("progress","Áudio recebido ("+audio.getName()+"). Preparando reconhecimento...");
         runWhisper(audio,lang,dir);
       }else throw new Exception("Ação não reconhecida: "+mode);
       send("done","Processamento concluído.");
@@ -98,7 +100,7 @@ public class MainActivity extends Activity {
         :raw.contains("HTTP Error 403")?"A plataforma recusou o acesso (403). Tente atualizar o motor ou outro link."
         :"Nao foi possivel baixar o video. Verifique o link e a conexao.";
       if(mode.equals("video"))send("error",friendly);
-      else send("error","Falha na transcrição: "+(raw.length()>230?raw.substring(0,230):raw));
+      else send("error","Falha na transcrição: "+(raw.length()>350?raw.substring(0,350):raw));
       Log.e("MediaDownloader","download: "+raw,ex);
     }
     finally{deleteDirectory(dir);}
