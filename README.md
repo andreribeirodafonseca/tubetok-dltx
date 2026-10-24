@@ -1,7 +1,1 @@
-Media Downloader Android v2.1 — Build 21
-
-Ícone selecionado: segunda imagem da linha inferior da grade enviada pelo usuário, com efeito de pincelada.
-
-Ícone aplicado em app/src/main/res/mipmap-* (ic_launcher e ic_launcher_round) e declarado no AndroidManifest.xml.
-
-Lógica da v2.0 preservada. APK ainda não compilado nem testado.
+TubTok v2.4 — Build 24\n\n- Transcrição Whisper em blocos exibida apenas na tela. Não gera TXT nem SRT.\n- Botão Traduzir ao lado de Copiar texto; resultado aparece abaixo do original.\n- Tradução local inglês ↔ português com Google ML Kit. Modelos baixados sob demanda e armazenados pelo ML Kit.\n- MP4 continua sendo salvo em Downloads.\n- Mantida a splash cinematográfica v2.3.\n\nCompilar e testar em Android via Codemagic; APK não compilado neste ambiente.\n

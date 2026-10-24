@@ -1,6 +1,20 @@
 package com.mediadownloader.app;
 
 import android.app.Activity;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.BitmapFactory;
+import android.graphics.drawable.GradientDrawable;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ImageView;
+import android.widget.TextView;
+import android.widget.ProgressBar;
 import android.os.Bundle;
 import android.os.Environment;
 import android.webkit.*;
@@ -24,17 +38,91 @@ import com.yausername.youtubedl_android.YoutubeDLException;
 
 public class MainActivity extends Activity {
   private WebView web;
+  private FrameLayout screen;
+  private View splash;
+  private TextView splashStatus;
+  private boolean webLoaded=false;
+  private boolean initFinished=false;
+  private long splashStart;
+  private final Handler uiHandler=new Handler(Looper.getMainLooper());
+  private void splashMessage(String message){runOnUiThread(()->{if(splashStatus!=null)splashStatus.setText(message);});}
+  private void finishSplashIfReady(){
+    if(!webLoaded||!initFinished||splash==null)return;
+    long remaining=Math.max(0,950-(android.os.SystemClock.uptimeMillis()-splashStart));
+    uiHandler.postDelayed(()->{if(splash!=null){screen.removeView(splash);splash=null;}},remaining);
+  }
+  private GradientDrawable splashBackground(){
+    GradientDrawable d=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff08111f,0xff17233b});
+    return d;
+  }
+  private View makeSplash(){
+    FrameLayout frame=new FrameLayout(this);
+    frame.setBackgroundColor(0xff050d1b);
+    ImageView art=new ImageView(this);
+    try(InputStream stream=getAssets().open("splash_cinema.jpg")){
+      art.setImageBitmap(BitmapFactory.decodeStream(stream));
+    }catch(Exception e){art.setImageResource(R.mipmap.ic_launcher);}
+    art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+    frame.addView(art,new FrameLayout.LayoutParams(-1,-1));
+    // Real initialization indicator; never a fake percentage baked into the image.
+    LinearLayout progressArea=new LinearLayout(this);
+    progressArea.setOrientation(LinearLayout.VERTICAL);
+    progressArea.setGravity(Gravity.CENTER);
+    progressArea.setPadding(dp(28),dp(12),dp(28),dp(12));
+    ProgressBar progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
+    progress.setIndeterminate(true);
+    progress.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(0xff00d6f8));
+    progressArea.addView(progress,new LinearLayout.LayoutParams(-1,dp(6)));
+    splashStatus=new TextView(this);
+    splashStatus.setText("Inicializando TubTok...");
+    splashStatus.setTextColor(Color.WHITE);
+    splashStatus.setTextSize(14);
+    splashStatus.setGravity(Gravity.CENTER);
+    LinearLayout.LayoutParams statusLp=new LinearLayout.LayoutParams(-1,-2);
+    statusLp.topMargin=dp(14);
+    progressArea.addView(splashStatus,statusLp);
+    FrameLayout.LayoutParams areaLp=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM);
+    areaLp.bottomMargin=dp(42);
+    frame.addView(progressArea,areaLp);
+    return frame;
+  }
+  private int dp(int value){return (int)(value*getResources().getDisplayMetrics().density+0.5f);}
   private ValueCallback<Uri[]> pendingFiles;
   private static final int PICKER=44;
   private final ExecutorService pool=Executors.newSingleThreadExecutor();
   private volatile boolean initialized=false;
   private void send(String type,String msg){runOnUiThread(()->web.evaluateJavascript("window.nativeEvent("+org.json.JSONObject.quote(type)+","+org.json.JSONObject.quote(msg)+")",null));}
   @Override public void onCreate(Bundle state){super.onCreate(state);
-    web=new WebView(this);setContentView(web);web.getSettings().setJavaScriptEnabled(true);web.getSettings().setDomStorageEnabled(true);
-    web.addJavascriptInterface(new Bridge(),"AndroidBridge");web.setWebViewClient(new WebViewClient());
+    splashStart=android.os.SystemClock.uptimeMillis();
+    screen=new FrameLayout(this);
+    web=new WebView(this);
+    screen.addView(web,new FrameLayout.LayoutParams(-1,-1));
+    splash=makeSplash();screen.addView(splash,new FrameLayout.LayoutParams(-1,-1));
+    setContentView(screen);
+    web.getSettings().setJavaScriptEnabled(true);web.getSettings().setDomStorageEnabled(true);
+    web.addJavascriptInterface(new Bridge(),"AndroidBridge");web.setWebViewClient(new WebViewClient(){
+      @Override public void onPageFinished(WebView view,String url){webLoaded=true;finishSplashIfReady();}
+    });
     web.setWebChromeClient(new WebChromeClient(){@Override public boolean onShowFileChooser(WebView v,ValueCallback<Uri[]> callback,FileChooserParams params){pendingFiles=callback;Intent i=new Intent(Intent.ACTION_GET_CONTENT);i.setType("audio/*");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(Intent.createChooser(i,"Escolher áudio"),PICKER);return true;}});
     web.loadUrl("file:///android_asset/index.html");
-    pool.execute(()->{try{YoutubeDL.getInstance().init(getApplicationContext());initialized=true;send("ready","Motor inicializado. Atualizando yt-dlp...");updateEngine(false);}catch(Exception e){send("error","Falha ao iniciar bibliotecas: "+e.getMessage());}});
+    pool.execute(()->{
+      try{
+        splashMessage("Verificando motor de downloads...");
+        YoutubeDL.getInstance().init(getApplicationContext());
+        initialized=true;
+        splashMessage("Verificando modelo de transcrição...");
+        File model=new File(new File(getFilesDir(),"models"),"ggml-base.bin");
+        boolean modelPresent=model.isFile()&&model.length()>100_000_000L;
+        splashMessage(modelPresent?"Whisper disponível neste celular":"Whisper será preparado na primeira transcrição");
+        send("ready",modelPresent?"Motor pronto. Whisper disponível.":"Motor pronto. O Whisper será baixado somente quando necessário.");
+      }catch(Exception e){
+        Log.e("TubTok","Falha na inicialização",e);
+        splashMessage("Falha ao iniciar. Verifique a mensagem no aplicativo.");
+        send("error","Falha ao iniciar motor de downloads: "+e.getMessage());
+      }finally{
+        runOnUiThread(()->{initFinished=true;finishSplashIfReady();});
+      }
+    });
   }
   public class Bridge {
     @JavascriptInterface public void copy(String text){runOnUiThread(()->{ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);cb.setPrimaryClip(ClipData.newPlainText("Transcrição",text));Toast.makeText(MainActivity.this,"Texto copiado",Toast.LENGTH_SHORT).show();});}
@@ -42,6 +130,7 @@ public class MainActivity extends Activity {
     @JavascriptInterface public void download(String url,String mode,String lang){pool.execute(()->downloadVideo(url,mode,lang));}
     @JavascriptInterface public boolean modelReady(){File f=new File(new File(getFilesDir(),"models"),"ggml-base.bin");return f.length()>100_000_000L;}
     @JavascriptInterface public void transcribeLocal(String uri,String lang){pool.execute(()->transcribePickedAudio(uri,lang));}
+    @JavascriptInterface public void translateTranscript(String text,String language){pool.execute(()->MainActivity.this.translateTranscript(text,language));}
     @JavascriptInterface public void prepareModel(){pool.execute(()->{try{ensureModel();send("model_ready","Whisper pronto.");}catch(Exception e){send("error","Falha ao preparar Whisper: "+e.getMessage());}});}
   }
   // API oficial verificada no código-fonte da biblioteca 0.18.1.
@@ -58,7 +147,7 @@ public class MainActivity extends Activity {
         send("ready","Motor atualizado com sucesso. Versão: "+String.valueOf(version));
       else send("warning","Atualização sem resultado definido. Versão: "+String.valueOf(version));
     }catch(Exception ex){
-      Log.e("MediaDownloader","Falha na atualização",ex);
+      Log.e("TubTok","Falha na atualização",ex);
       String detail=String.valueOf(ex.getMessage());
       if(detail.length()>280)detail=detail.substring(0,280);
       send("warning","Falha real da atualização: "+ex.getClass().getSimpleName()+" — "+detail);
@@ -78,7 +167,7 @@ public class MainActivity extends Activity {
         YoutubeDL.getInstance().execute(req, "video-"+System.currentTimeMillis(), (progress, eta, line)->{if(progress>=0)send("progress",String.format(java.util.Locale.US,"Baixando vídeo: %.0f%%",progress));return kotlin.Unit.INSTANCE;});
         File video=null;for(File f:Objects.requireNonNull(dir.listFiles()))if(f.isFile()&&(f.getName().endsWith(".mp4")||f.getName().endsWith(".webm")||f.getName().endsWith(".mkv"))){video=f;break;}
         if(video==null)throw new Exception("Nenhum vídeo encontrado após download.");
-        String saved=saveToDownloads(video,"MediaDownloader_"+System.currentTimeMillis()+"."+video.getName().substring(video.getName().lastIndexOf('.')+1));
+        String saved=saveToDownloads(video,"TubTok_"+System.currentTimeMillis()+"."+video.getName().substring(video.getName().lastIndexOf('.')+1));
         send("video_saved",saved);
       }else if(mode.equals("transcribe")||mode.equals("video_transcribe")){
         // Transcrição é independente do MP4. Baixa somente o áudio uma vez.
@@ -107,7 +196,7 @@ public class MainActivity extends Activity {
         :"Nao foi possivel baixar o video. Verifique o link e a conexao.";
       if(mode.equals("video"))send("error",friendly);
       else send("error","Falha na transcrição: "+(raw.length()>350?raw.substring(0,350):raw));
-      Log.e("MediaDownloader","download: "+raw,ex);
+      Log.e("TubTok","download: "+raw,ex);
     }
     finally{deleteDirectory(dir);}
   }
@@ -131,7 +220,7 @@ public class MainActivity extends Activity {
       }
       runWhisper(audio,lang,dir);
       send("done","Transcrição concluída.");
-    }catch(Exception e){Log.e("MediaDownloader","local whisper",e);send("error","Falha na transcrição local: "+e.getMessage());}
+    }catch(Exception e){Log.e("TubTok","local whisper",e);send("error","Falha na transcrição local: "+e.getMessage());}
     finally{deleteDirectory(dir);}
   }
   private File ensureModel() throws Exception {
@@ -197,7 +286,7 @@ public class MainActivity extends Activity {
             failure=null;break;
           }catch(Exception ex){
             failure=ex;
-            Log.w("MediaDownloader","Bloco "+(block+1)+" tentativa "+attempt,ex);
+            Log.w("TubTok","Bloco "+(block+1)+" tentativa "+attempt,ex);
             if(attempt<2)send("stage","Tentando novamente bloco "+(block+1)+" de "+total);
           }
         }
@@ -229,14 +318,48 @@ public class MainActivity extends Activity {
     }
     String txt=allText.toString().trim();
     if(txt.isEmpty())throw new IOException("Whisper não identificou fala neste áudio.");
-    send("stage","Salvando TXT e SRT");
-    String name="MediaDownloader_"+System.currentTimeMillis();
-    File txtFile=new File(dir,"transcricao.txt"),srtFile=new File(dir,"transcricao.srt");
-    try(OutputStream o=new FileOutputStream(txtFile)){o.write(txt.getBytes("UTF-8"));}
-    try(OutputStream o=new FileOutputStream(srtFile)){o.write(srt.toString().getBytes("UTF-8"));}
-    saveToDownloads(txtFile,name+".txt");saveToDownloads(srtFile,name+".srt");
+    // O texto permanece na tela; nenhum arquivo TXT ou SRT é gerado.
     send("text",txt);
-    send("transcript_saved","TXT e SRT salvos em Downloads/MediaDownloader");
+  }
+  private void translateTranscript(String original,String selectedLanguage){
+    if(original==null||original.trim().isEmpty()){send("translation_error","Não há texto para traduzir.");return;}
+    com.google.mlkit.nl.translate.Translator translator=null;
+    try{
+      send("translation_status","Identificando idioma...");
+      String source=selectedLanguage;
+      if(!"pt".equals(source)&&!"en".equals(source)){
+        com.google.mlkit.nl.languageid.LanguageIdentifier identifier=com.google.mlkit.nl.languageid.LanguageIdentification.getClient();
+        try{source=com.google.android.gms.tasks.Tasks.await(identifier.identifyLanguage(original));}
+        finally{identifier.close();}
+      }
+      if(!"pt".equals(source)&&!"en".equals(source)){
+        send("translation_error","Tradução disponível somente entre inglês e português. Selecione o idioma original.");return;
+      }
+      String target="pt".equals(source)?"en":"pt";
+      send("translation_status","Preparando tradução "+("pt".equals(source)?"português → inglês":"inglês → português")+"...");
+      com.google.mlkit.nl.translate.TranslatorOptions options=new com.google.mlkit.nl.translate.TranslatorOptions.Builder()
+        .setSourceLanguage(source).setTargetLanguage(target).build();
+      translator=com.google.mlkit.nl.translate.Translation.getClient(options);
+      send("translation_status","Verificando modelo de tradução (download somente se necessário)...");
+      com.google.android.gms.tasks.Tasks.await(translator.downloadModelIfNeeded());
+      StringBuilder output=new StringBuilder();
+      // Evita enviar textos longos demais ao tradutor de uma vez; mantém a ordem.
+      String remaining=original.trim();int index=0;
+      while(!remaining.isEmpty()){
+        int cut=Math.min(1200,remaining.length());
+        if(cut<remaining.length()){
+          int boundary=Math.max(remaining.lastIndexOf('\n',cut),Math.max(remaining.lastIndexOf('.' ,cut),remaining.lastIndexOf(' ',cut)));
+          if(boundary>cut/2)cut=boundary+1;
+        }
+        String chunk=remaining.substring(0,cut).trim();remaining=remaining.substring(cut).trim();
+        if(chunk.isEmpty())continue;
+        send("translation_status","Traduzindo trecho "+(++index)+"...");
+        if(output.length()>0)output.append("\n");
+        output.append(com.google.android.gms.tasks.Tasks.await(translator.translate(chunk)));
+      }
+      send("translation_done",output.toString());
+    }catch(Exception e){Log.e("TubTok","translation",e);send("translation_error","Falha ao traduzir: "+e.getMessage());}
+    finally{if(translator!=null)translator.close();}
   }
   private String srtTime(long ms){
     long h=ms/3600000,m=(ms/60000)%60,sec=(ms/1000)%60,milli=ms%1000;
@@ -248,7 +371,7 @@ public class MainActivity extends Activity {
   private String read(File f)throws Exception{ByteArrayOutputStream out=new ByteArrayOutputStream();try(InputStream in=new FileInputStream(f)){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}return out.toString("UTF-8");}
   private String saveToDownloads(File src,String name)throws Exception{
     android.content.ContentValues v=new android.content.ContentValues();v.put(MediaStore.Downloads.DISPLAY_NAME,name);v.put(MediaStore.Downloads.MIME_TYPE,name.endsWith(".srt")?"text/plain":name.endsWith(".txt")?"text/plain":"video/mp4");
-    if(android.os.Build.VERSION.SDK_INT>=29)v.put(MediaStore.Downloads.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/MediaDownloader");
+    if(android.os.Build.VERSION.SDK_INT>=29)v.put(MediaStore.Downloads.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/TubTok");
     Uri uri=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,v);if(uri==null)throw new Exception("Não foi possível criar arquivo em Downloads");
     try(InputStream in=new FileInputStream(src);OutputStream out=getContentResolver().openOutputStream(uri)){byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}return name;
   }
