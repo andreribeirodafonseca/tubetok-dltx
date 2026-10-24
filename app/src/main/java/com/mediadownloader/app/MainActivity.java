@@ -110,6 +110,15 @@ public class MainActivity extends Activity {
         splashMessage("Verificando motor de downloads...");
         YoutubeDL.getInstance().init(getApplicationContext());
         initialized=true;
+        // A versão empacotada pode envelhecer; tenta atualizar sem bloquear a inicialização.
+        splashMessage("Verificando atualização do yt-dlp...");
+        try {
+          YoutubeDL.UpdateStatus update = YoutubeDL.getInstance().updateYoutubeDL(
+              getApplicationContext(), YoutubeDL.UpdateChannel._STABLE);
+          Log.i("TubTok", "Atualização automática yt-dlp: " + update);
+        } catch (Exception updateError) {
+          Log.w("TubTok", "Atualização yt-dlp indisponível; usando versão instalada", updateError);
+        }
         splashMessage("Verificando modelo de transcrição...");
         File model=new File(new File(getFilesDir(),"models"),"ggml-base.bin");
         boolean modelPresent=model.isFile()&&model.length()>100_000_000L;
@@ -159,6 +168,8 @@ public class MainActivity extends Activity {
     File dir=new File(getCacheDir(),"videos-"+System.currentTimeMillis());dir.mkdirs();
     try{
       send("progress","Obtendo vídeo do YouTube ou TikTok...");
+      // Links curtos vt.tiktok.com são aceitos diretamente pelo extrator yt-dlp.
+      // O redirecionamento não corrige bloqueios de fingerprint/TLS do TikTok.
       if(mode.equals("video")){
         YoutubeDLRequest req=new YoutubeDLRequest(url);
         req.addOption("-f","best[ext=mp4]/best");
@@ -190,13 +201,26 @@ public class MainActivity extends Activity {
       send("done","Processamento concluído.");
     }catch(Exception ex){
       String raw=String.valueOf(ex.getMessage());
-      String friendly=raw.contains("Unable to extract webpage video data")||raw.contains("impersonat")
-        ?"O TikTok recusou a extracao neste Android. Atualize o motor e tente novamente. Se persistir, a plataforma exige suporte de navegador que pode nao estar disponivel no Android."
-        :raw.contains("HTTP Error 403")?"A plataforma recusou o acesso (403). Tente atualizar o motor ou outro link."
-        :"Nao foi possivel baixar o video. Verifique o link e a conexao.";
-      if(mode.equals("video"))send("error",friendly);
-      else send("error","Falha na transcrição: "+(raw.length()>350?raw.substring(0,350):raw));
-      Log.e("TubTok","download: "+raw,ex);
+      Log.e("TubTok","Falha ao obter mídia; mensagem completa: "+raw,ex);
+      String low=raw.toLowerCase(java.util.Locale.ROOT);
+      String friendly;
+      if(low.contains("impersonat") || low.contains("status code 0") ||
+         low.contains("unable to extract webpage video data") || low.contains("video not available")) {
+        friendly="O TikTok não liberou este vídeo para o motor de download no Android. " +
+          "O site pode exigir identificação de navegador não disponível nesta versão. " +
+          "Atualize o yt-dlp nas configurações e tente novamente. Se persistir, " +
+          "não é um problema do Whisper nem do FFmpeg.";
+      } else if(low.contains("403") || low.contains("forbidden")) {
+        friendly="A plataforma recusou o acesso ao vídeo (HTTP 403). Atualize o yt-dlp e tente novamente.";
+      } else if(low.contains("unsupported url")) {
+        friendly="O link não é reconhecido pelo yt-dlp. Confira o endereço do vídeo.";
+      } else if(low.contains("unable to download") || low.contains("timed out") || low.contains("network")) {
+        friendly="Não foi possível receber o arquivo. Confira a conexão e tente novamente.";
+      } else {
+        // Nunca exibir o stderr inteiro: WARNINGS não são diagnóstico final.
+        friendly="Não foi possível obter a mídia. Confira o link, a conexão e a atualização do motor.";
+      }
+      send("error",friendly);
     }
     finally{deleteDirectory(dir);}
   }
