@@ -1,139 +1,151 @@
 package com.mediadownloader.app;
 
+import android.media.AudioFormat;
 import android.media.MediaCodec;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
-import android.media.AudioFormat;
-import java.io.*;
+import android.os.SystemClock;
+import android.util.Log;
+import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
-/** Converts Android-decodable audio containers to 16kHz mono PCM16 WAV.
- * Uses MediaExtractor/MediaCodec (no external ffmpeg executables).
- * Intermediate PCM is streamed to disk to avoid holding long videos in RAM.
- */
+/** Streams decoded audio directly into 16 kHz mono WAV; no FFmpeg or full-size PCM intermediate. */
 public final class AudioConverter {
   private AudioConverter() {}
-  public static File convert(File input, File wav) throws Exception {
-    MediaExtractor extractor=new MediaExtractor();
-    MediaCodec codec=null;
-    File pcm=new File(wav.getParentFile(),"decoded.pcm");
+  public interface Progress { void onProgress(int percent, long audioMs, long durationMs); }
+  private static final long STALL_MS=30000;
+  private static final long DEQUEUE_US=10000;
+  public static File convert(File input,File wav)throws Exception{return convert(input,wav,null);}
+  public static File convert(File input,File wav,Progress progress)throws Exception{
+    MediaExtractor extractor=new MediaExtractor();MediaCodec codec=null;
+    boolean success=false;
     try {
       extractor.setDataSource(input.getAbsolutePath());
       MediaFormat format=null;
       for(int i=0;i<extractor.getTrackCount();i++){
-        MediaFormat f=extractor.getTrackFormat(i);
-        String mime=f.getString(MediaFormat.KEY_MIME);
-        if(mime!=null&&mime.startsWith("audio/")){format=f;extractor.selectTrack(i);break;}
+        MediaFormat candidate=extractor.getTrackFormat(i);
+        String mime=candidate.getString(MediaFormat.KEY_MIME);
+        if(mime!=null&&mime.startsWith("audio/")){format=candidate;extractor.selectTrack(i);break;}
       }
-      if(format==null)throw new IOException("Nenhuma trilha de áudio reconhecida: "+input.getName());
-      String mime=format.getString(MediaFormat.KEY_MIME);
-      codec=MediaCodec.createDecoderByType(mime);
-      codec.configure(format,null,null,0);
-      codec.start();
-      MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();
-      boolean inputDone=false,outputDone=false;
-      int sampleRate=format.containsKey(MediaFormat.KEY_SAMPLE_RATE)?format.getInteger(MediaFormat.KEY_SAMPLE_RATE):44100;
-      int channels=format.containsKey(MediaFormat.KEY_CHANNEL_COUNT)?format.getInteger(MediaFormat.KEY_CHANNEL_COUNT):1;
+      if(format==null)throw new IOException("Nenhuma trilha de áudio encontrada no arquivo.");
+      long durationUs=format.containsKey(MediaFormat.KEY_DURATION)?format.getLong(MediaFormat.KEY_DURATION):-1;
+      int rate=format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+      int channels=format.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
       int encoding=AudioFormat.ENCODING_PCM_16BIT;
-      long lastProgress=System.currentTimeMillis();
-      long conversionStarted=lastProgress;
-      try(OutputStream out=new BufferedOutputStream(new FileOutputStream(pcm))){
-        while(!outputDone){
-          if(!inputDone){
-            int index=codec.dequeueInputBuffer(10000);
-            if(index>=0){
-              ByteBuffer buffer=codec.getInputBuffer(index);
-              if(buffer==null)throw new IOException("Buffer de entrada indisponível");
-              buffer.clear();
-              int size=extractor.readSampleData(buffer,0);
-              if(size<0){codec.queueInputBuffer(index,0,0,0,MediaCodec.BUFFER_FLAG_END_OF_STREAM);inputDone=true;}
-              else{codec.queueInputBuffer(index,0,size,extractor.getSampleTime(),0);extractor.advance();}
+      codec=MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME));
+      codec.configure(format,null,null,0);codec.start();
+      MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();
+      boolean inputEnd=false,outputEnd=false;
+      long lastActivity=SystemClock.elapsedRealtime();long lastReport=0;
+      long lastMediaUs=0;long written=0;
+      Resampler resampler=new Resampler(rate,channels);
+      try(RandomAccessFile output=new RandomAccessFile(wav,"rw")){
+        output.setLength(0);output.write(new byte[44]);
+        while(!outputEnd){
+          if(Thread.currentThread().isInterrupted())throw new IOException("Conversão interrompida.");
+          if(!inputEnd){
+            int inIndex=codec.dequeueInputBuffer(DEQUEUE_US);
+            if(inIndex>=0){
+              ByteBuffer in=codec.getInputBuffer(inIndex);
+              if(in==null)throw new IOException("Buffer de entrada indisponível.");
+              in.clear();int count=extractor.readSampleData(in,0);
+              if(count<0){codec.queueInputBuffer(inIndex,0,0,0,MediaCodec.BUFFER_FLAG_END_OF_STREAM);inputEnd=true;}
+              else {long pts=extractor.getSampleTime();codec.queueInputBuffer(inIndex,0,count,Math.max(0,pts),0);extractor.advance();lastMediaUs=Math.max(lastMediaUs,pts);}
+              lastActivity=SystemClock.elapsedRealtime();
             }
           }
-          int index=codec.dequeueOutputBuffer(info,10000);
-          if(index==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED){
-            MediaFormat f=codec.getOutputFormat();
-            if(f.containsKey(MediaFormat.KEY_SAMPLE_RATE))sampleRate=f.getInteger(MediaFormat.KEY_SAMPLE_RATE);
-            if(f.containsKey(MediaFormat.KEY_CHANNEL_COUNT))channels=f.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
-            encoding=f.containsKey(MediaFormat.KEY_PCM_ENCODING)?f.getInteger(MediaFormat.KEY_PCM_ENCODING):AudioFormat.ENCODING_PCM_16BIT;
-          }else if(index>=0){
-            if(info.size>0){
-              ByteBuffer b=codec.getOutputBuffer(index);
-              if(b==null)throw new IOException("Buffer de saída indisponível");
-              b.position(info.offset);b.limit(info.offset+info.size);
-              if(encoding==AudioFormat.ENCODING_PCM_16BIT){
-                byte[] chunk=new byte[Math.min(65536,info.size)];
-                while(b.hasRemaining()){int n=Math.min(b.remaining(),chunk.length);b.get(chunk,0,n);out.write(chunk,0,n);}
-              }else if(encoding==AudioFormat.ENCODING_PCM_FLOAT){
-                b.order(ByteOrder.LITTLE_ENDIAN);
-                while(b.remaining()>=4){float v=b.getFloat();write16(out,(short)(Math.max(-1,Math.min(1,v))*32767));}
-              }else throw new IOException("Formato PCM não suportado pelo conversor: "+encoding);
-            }
-            outputDone=(info.flags&MediaCodec.BUFFER_FLAG_END_OF_STREAM)!=0;
-            codec.releaseOutputBuffer(index,false);
+          int outIndex=codec.dequeueOutputBuffer(info,DEQUEUE_US);
+          if(outIndex==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED){
+            MediaFormat actual=codec.getOutputFormat();
+            int newRate=actual.containsKey(MediaFormat.KEY_SAMPLE_RATE)?actual.getInteger(MediaFormat.KEY_SAMPLE_RATE):rate;
+            int newChannels=actual.containsKey(MediaFormat.KEY_CHANNEL_COUNT)?actual.getInteger(MediaFormat.KEY_CHANNEL_COUNT):channels;
+            if(resampler.frames>0&&(rate!=newRate||channels!=newChannels))throw new IOException("Formato de áudio mudou durante a conversão.");
+            rate=newRate;channels=newChannels;
+            encoding=actual.containsKey(MediaFormat.KEY_PCM_ENCODING)?actual.getInteger(MediaFormat.KEY_PCM_ENCODING):AudioFormat.ENCODING_PCM_16BIT;
+            if(resampler.frames==0)resampler=new Resampler(rate,channels);
+            lastActivity=SystemClock.elapsedRealtime();
+          } else if(outIndex>=0){
+            try{
+              if(info.size>0){
+                ByteBuffer data=codec.getOutputBuffer(outIndex);
+                if(data==null)throw new IOException("Buffer de saída indisponível.");
+                data.position(info.offset);data.limit(info.offset+info.size);data.order(ByteOrder.LITTLE_ENDIAN);
+                written+=resampler.append(data,encoding,output);
+                lastMediaUs=Math.max(lastMediaUs,info.presentationTimeUs);
+              }
+              outputEnd=(info.flags&MediaCodec.BUFFER_FLAG_END_OF_STREAM)!=0;
+              lastActivity=SystemClock.elapsedRealtime();
+            }finally{codec.releaseOutputBuffer(outIndex,false);}
           }
-          if(Thread.currentThread().isInterrupted())throw new IOException("Conversão cancelada");
-          if(System.currentTimeMillis()-conversionStarted>600000)throw new IOException("Conversão excedeu 10 minutos");
-          if(System.currentTimeMillis()-lastProgress>120000)throw new IOException("Tempo limite ao decodificar áudio");
-          if(index>=0)lastProgress=System.currentTimeMillis();
+          long now=SystemClock.elapsedRealtime();
+          if(now-lastActivity>STALL_MS)throw new IOException("Decodificador sem resposta por 30 segundos. Formato de áudio ou codec incompatível.");
+          if(progress!=null&&(now-lastReport>=350||outputEnd)){
+            int pct=durationUs>0?(int)Math.min(99,Math.max(0,lastMediaUs*100/durationUs)):-1;
+            progress.onProgress(outputEnd?100:pct,lastMediaUs/1000,durationUs/1000);
+            lastReport=now;
+          }
         }
+        written+=resampler.finish(output);
+        if(written<=0)throw new IOException("O áudio decodificado está vazio.");
+        if(written>0xffffffffL-36)throw new IOException("Áudio longo demais para o formato WAV.");
+        output.seek(0);writeHeader(output,written);
       }
-      if(sampleRate<=0||channels<=0||channels>8)throw new IOException("Formato de áudio inválido: "+sampleRate+"Hz, "+channels+" canais");
-      resampleToWav(pcm,wav,sampleRate,channels);
-      return wav;
-    }finally{
-      if(codec!=null){try{codec.stop();}catch(Exception ignored){}codec.release();}
+      success=true;return wav;
+    }catch(Exception ex){Log.e("TubTok","Falha na conversão de áudio",ex);throw ex;}
+    finally{
+      if(codec!=null){try{codec.stop();}catch(Exception ignored){}try{codec.release();}catch(Exception ignored){}}
       extractor.release();
-      if(pcm.exists())pcm.delete();
+      if(!success&&wav.exists()&&!wav.delete())Log.w("TubTok","Não foi possível excluir WAV incompleto");
     }
   }
-  private static void resampleToWav(File pcm,File wav,int rate,int channels)throws IOException{
-    long frames=pcm.length()/(2L*channels);
-    if(frames==0)throw new IOException("Áudio decodificado vazio");
-    long outFrames=(frames*16000L)/rate;
-    if(outFrames<=0||outFrames>0x7fffffffL/2-36)throw new IOException("Áudio excede o tamanho WAV permitido");
-    // Sequential buffered reads: avoid RandomAccessFile.seek() for each output sample.
-    // That approach caused millions of disk seeks and appeared to freeze on long videos.
-    try(InputStream in=new BufferedInputStream(new FileInputStream(pcm),256*1024);
-        OutputStream out=new BufferedOutputStream(new FileOutputStream(wav),256*1024)){
-      writeWavHeader(out,(int)(outFrames*2));
-      byte[] frame=new byte[channels*2];
-      float current=readMonoSequential(in,frame,channels);
-      float next=frames>1?readMonoSequential(in,frame,channels):current;
-      long currentIndex=0;
-      for(long i=0;i<outFrames;i++){
-        if(Thread.currentThread().isInterrupted())throw new IOException("Conversão cancelada");
-        double pos=i*(double)rate/16000.0;
-        long idx=Math.min((long)pos,frames-1);
-        while(currentIndex<idx){
-          current=next;
-          currentIndex++;
-          next=currentIndex+1<frames?readMonoSequential(in,frame,channels):current;
+  private static final class Resampler {
+    final int rate,channels;long frames=0,nextOut=0;double previous=0;boolean hasPrevious=false;
+    Resampler(int rate,int channels)throws IOException{
+      if(rate<8000||rate>384000||channels<1||channels>8)throw new IOException("Formato PCM inválido: "+rate+" Hz, "+channels+" canais.");
+      this.rate=rate;this.channels=channels;
+    }
+    long append(ByteBuffer data,int encoding,RandomAccessFile out)throws IOException{
+      int bytesPerSample=encoding==AudioFormat.ENCODING_PCM_FLOAT?4:encoding==AudioFormat.ENCODING_PCM_16BIT?2:0;
+      if(bytesPerSample==0)throw new IOException("Formato PCM não suportado: "+encoding);
+      int frameBytes=bytesPerSample*channels;
+      if(data.remaining()%frameBytes!=0)throw new IOException("Quadro PCM incompleto.");
+      long produced=0;
+      while(data.remaining()>=frameBytes){
+        double mono=0;
+        for(int c=0;c<channels;c++){
+          if(bytesPerSample==2)mono+=data.getShort();
+          else mono+=Math.max(-1,Math.min(1,data.getFloat()))*32767.0;
         }
-        double frac=pos-idx;
-        int sample=Math.round((float)(current+(next-current)*frac));
-        write16(out,(short)Math.max(Short.MIN_VALUE,Math.min(Short.MAX_VALUE,sample)));
+        mono/=channels;
+        if(!hasPrevious){previous=mono;hasPrevious=true;}
+        while(nextOut*(double)rate/16000.0<=frames){
+          double position=nextOut*(double)rate/16000.0;
+          double frac=Math.max(0,Math.min(1,position-(frames-1)));
+          double value=frames==0?mono:previous+(mono-previous)*frac;
+          int sample=(int)Math.round(Math.max(-32768,Math.min(32767,value)));
+          out.write(sample&255);out.write((sample>>>8)&255);
+          produced+=2;nextOut++;
+        }
+        previous=mono;frames++;
       }
+      return produced;
+    }
+    long finish(RandomAccessFile out)throws IOException{
+      if(!hasPrevious)return 0;
+      long produced=0;
+      long total=(long)Math.ceil(frames*16000.0/rate);
+      while(nextOut<total){int sample=(int)Math.round(Math.max(-32768,Math.min(32767,previous)));out.write(sample&255);out.write((sample>>>8)&255);produced+=2;nextOut++;}
+      return produced;
     }
   }
-  private static float readMonoSequential(InputStream in,byte[] frame,int channels)throws IOException{
-    int n=0;
-    while(n<frame.length){int r=in.read(frame,n,frame.length-n);if(r<0)throw new EOFException("Áudio PCM incompleto");n+=r;}
-    int sum=0;
-    for(int c=0;c<channels;c++){
-      int lo=frame[c*2]&255,hi=frame[c*2+1]&255;
-      sum+=(short)((hi<<8)|lo);
-    }
-    return sum/(float)channels;
-  }
-  private static void write16(OutputStream out,short v)throws IOException{out.write(v&255);out.write((v>>>8)&255);}
-  private static void write32(OutputStream out,int v)throws IOException{out.write(v&255);out.write((v>>>8)&255);out.write((v>>>16)&255);out.write((v>>>24)&255);}
-  private static void writeWavHeader(OutputStream out,int bytes)throws IOException{
-    out.write(new byte[]{'R','I','F','F'});write32(out,bytes+36);
-    out.write(new byte[]{'W','A','V','E','f','m','t',' '});write32(out,16);
-    write16(out,(short)1);write16(out,(short)1);write32(out,16000);
-    write32(out,32000);write16(out,(short)2);write16(out,(short)16);
-    out.write(new byte[]{'d','a','t','a'});write32(out,bytes);
+  private static void le16(RandomAccessFile f,int v)throws IOException{f.write(v&255);f.write((v>>>8)&255);}
+  private static void le32(RandomAccessFile f,long v)throws IOException{for(int i=0;i<4;i++)f.write((int)(v>>>(i*8))&255);}
+  private static void writeHeader(RandomAccessFile f,long bytes)throws IOException{
+    f.writeBytes("RIFF");le32(f,bytes+36);f.writeBytes("WAVEfmt ");le32(f,16);
+    le16(f,1);le16(f,1);le32(f,16000);le32(f,32000);le16(f,2);le16(f,16);
+    f.writeBytes("data");le32(f,bytes);
   }
 }

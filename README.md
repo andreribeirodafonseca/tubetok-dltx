@@ -1,1 +1,1 @@
-TubTok v2.7 Build 27 — seletor explícito de direção da tradução (Inglês → Português / Português → Inglês), botão dinâmico e campo traduzido. Mantém Whisper, yt-dlp e sem dependência FFmpeg separada. APK ainda não compilado/testado.
+TubTok v2.8 Build 28 — seletor explícito de direção da tradução (Inglês → Português / Português → Inglês), botão dinâmico e campo traduzido. Mantém Whisper, yt-dlp e sem dependência FFmpeg separada. APK ainda não compilado/testado.

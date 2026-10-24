@@ -278,7 +278,11 @@ public class MainActivity extends Activity {
     send("stage","Preparando modelo Whisper");
     File model=ensureModel();
     send("stage","Convertendo áudio para WAV 16 kHz");
-    File wav=AudioConverter.convert(audio,new File(dir,"whisper_16k.wav"));
+    File wav=AudioConverter.convert(audio,new File(dir,"whisper_16k.wav"),(pct,positionMs,durationMs)->{
+      String elapsed=String.format(java.util.Locale.getDefault(),"%d:%02d",positionMs/60000,(positionMs/1000)%60);
+      String total=durationMs>0?String.format(java.util.Locale.getDefault(),"%d:%02d",durationMs/60000,(durationMs/1000)%60):"?";
+      send("conversion_progress",pct+"|"+elapsed+"|"+total);
+    });
     long dataBytes=wav.length()-44;
     if(dataBytes<=0)throw new IOException("WAV vazio após conversão.");
     final long bytesPerSecond=32000L; // PCM16, mono, 16000 Hz

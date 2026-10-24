@@ -8,6 +8,7 @@ function resetProgress(){clearInterval(watchdog);$('progressBox').hidden=true;$(
 function showProgress(pct,label){$('progressBox').hidden=false;$('bar').style.width=pct+'%';$('progressText').textContent=label;}
 window.nativeEvent=(type,message)=>{
 if(type==='stage'){notice(message);}
+if(type==='conversion_progress'){const [pct,elapsed,total]=message.split('|');showProgress(Number(pct)>=0?Number(pct):0,`Convertendo áudio: ${elapsed} / ${total}${Number(pct)>=0?' • '+pct+'%':''}`);}
 if(type==='block_start'){
  const [b,n,attempt]=message.split('|').map(Number);blockStartedAt=Date.now();
  clearInterval(watchdog);watchdog=setInterval(()=>{
