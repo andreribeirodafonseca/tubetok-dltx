@@ -29,5 +29,8 @@ notice('Inicializando bibliotecas Android...');update();
 
 
 
-$('translateText').onclick=()=>{const text=$('transcriptText').value.trim();if(!text){notice('Não há texto para traduzir.',true);return;}if(!window.AndroidBridge){notice('Tradução disponível no aplicativo Android.',true);return;}$('translationBox').hidden=false;$('translatedText').value='';$('translateText').disabled=true;const lang=$('lang').value;$('translationDirection').textContent=lang==='pt'?'(português → inglês)':lang==='en'?'(inglês → português)':'(idioma detectado)';$('translationStatus').textContent='Preparando tradução...';AndroidBridge.translateTranscript(text,lang);};
+$('translateText').onclick=()=>{const text=$('transcriptText').value.trim();if(!text){notice('Não há texto para traduzir.',true);return;}if(!window.AndroidBridge){notice('Tradução disponível no aplicativo Android.',true);return;}$('translationBox').hidden=false;$('translatedText').value='';$('translateText').disabled=true;const lang=$('translationRoute').value;$('translationDirection').textContent=lang==='pt'?'(para inglês)':'(para português)';$('translationStatus').textContent='Preparando tradução...';AndroidBridge.translateTranscript(text,lang);};
 $('copyTranslation').onclick=()=>{const text=$('translatedText').value;if(window.AndroidBridge)AndroidBridge.copy(text);else navigator.clipboard?.writeText(text);};
+
+function refreshTranslationRoute(){const source=$('translationRoute').value; $('translateText').textContent=source==='pt'?'🌐 Traduzir PT → EN':'🌐 Traduzir EN → PT';$('translationBox').hidden=true;}
+$('translationRoute').onchange=refreshTranslationRoute; $('lang').addEventListener('change',()=>{if($('lang').value==='pt'||$('lang').value==='en'){$('translationRoute').value=$('lang').value;refreshTranslationRoute();}}); refreshTranslationRoute();
