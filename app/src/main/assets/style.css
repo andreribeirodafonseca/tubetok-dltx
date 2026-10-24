@@ -4,3 +4,8 @@
 .resultActions{justify-content:space-between}.resultActions button{flex:0 1 auto}#translationBox{margin-top:22px;border-top:1px solid #34415b;padding-top:12px}#translationBox h2{font-size:18px}#translationDirection{font-size:12px;font-weight:400;color:#a6b1c5}#translationStatus{color:#a6b1c5;font-size:13px}
 
 .translationOptions{margin-top:14px;margin-bottom:10px}.translationOptions label{display:block;margin-bottom:7px;color:#c9d4e8;font-size:14px}.translationOptions select{width:100%;padding:12px;border-radius:10px;background:#101a2c;color:#f2f6ff;border:1px solid #42516a}
+
+/* Logo original sem fundo, mantendo a proporção no cabeçalho */
+header .logo{background:transparent;padding:0;border-radius:0;flex:0 0 76px;width:76px;height:76px;display:flex;align-items:center;justify-content:center}
+header .logo img{display:block;width:100%;height:100%;object-fit:contain}
+@media(max-width:530px){header .logo{flex-basis:64px;width:64px;height:64px}}

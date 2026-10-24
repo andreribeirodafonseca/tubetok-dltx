@@ -35,3 +35,6 @@ $('copyTranslation').onclick=()=>{const text=$('translatedText').value;if(window
 
 function refreshTranslationRoute(){const source=$('translationRoute').value; $('translateText').textContent=source==='pt'?'🌐 Traduzir PT → EN':'🌐 Traduzir EN → PT';$('translationBox').hidden=true;}
 $('translationRoute').onchange=refreshTranslationRoute; $('lang').addEventListener('change',()=>{if($('lang').value==='pt'||$('lang').value==='en'){$('translationRoute').value=$('lang').value;refreshTranslationRoute();}}); refreshTranslationRoute();
+
+// Fonte única de versão: metadados do APK, sem números divergentes na interface.
+(function(){try{if(window.AndroidBridge && typeof AndroidBridge.versionInfo === "function"){const parts=String(AndroidBridge.versionInfo()).split("|");if(parts.length===2){const h=document.getElementById("headerVersion"),f=document.getElementById("footerVersion");if(h)h.textContent="v"+parts[0];if(f)f.textContent="v"+parts[0]+" • Build "+parts[1];document.title="TubTok v"+parts[0];}}}catch(e){console.warn("Versão nativa indisponível",e);}})();

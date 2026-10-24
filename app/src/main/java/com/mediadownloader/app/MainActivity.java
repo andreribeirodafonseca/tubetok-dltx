@@ -91,6 +91,38 @@ public class MainActivity extends Activity {
   private static final int PICKER=44;
   private final ExecutorService pool=Executors.newSingleThreadExecutor();
   private volatile boolean initialized=false;
+  private final java.util.concurrent.atomic.AtomicInteger activeJobs = new java.util.concurrent.atomic.AtomicInteger(0);
+  private volatile boolean exitingByChoice = false;
+  private void runProtected(String label, Runnable work) {
+    activeJobs.incrementAndGet();
+    runOnUiThread(() -> {
+      try { android.content.Intent intent = new android.content.Intent(this, ProcessingService.class);
+        intent.putExtra("label", label);
+        if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(intent); else startService(intent);
+      } catch (Exception e) { Log.w("TubTok", "Não foi possível ativar proteção em segundo plano", e); }
+    });
+    pool.execute(() -> {
+      try { work.run(); }
+      finally { if (activeJobs.decrementAndGet() == 0) {
+        runOnUiThread(() -> { try { stopService(new android.content.Intent(this, ProcessingService.class)); } catch(Exception ignored) {} });
+      } }
+    });
+  }
+  private void confirmExit() {
+    if (activeJobs.get() <= 0) { finish(); return; }
+    new android.app.AlertDialog.Builder(this)
+      .setTitle("Processamento em andamento")
+      .setMessage("O TubTok está trabalhando. Deseja realmente fechar o aplicativo? O download, a conversão, a transcrição ou a tradução em andamento será interrompido.")
+      .setNegativeButton("Continuar trabalhando", (dialog, which) -> dialog.dismiss())
+      .setPositiveButton("Fechar e cancelar", (dialog, which) -> {
+        exitingByChoice=true;
+        pool.shutdownNow();
+        stopService(new android.content.Intent(this, ProcessingService.class));
+        finishAndRemoveTask();
+      }).show();
+  }
+  @Override public void onBackPressed() { confirmExit(); }
+
   private void send(String type,String msg){runOnUiThread(()->web.evaluateJavascript("window.nativeEvent("+org.json.JSONObject.quote(type)+","+org.json.JSONObject.quote(msg)+")",null));}
   @Override public void onCreate(Bundle state){super.onCreate(state);
     splashStart=android.os.SystemClock.uptimeMillis();
@@ -134,13 +166,14 @@ public class MainActivity extends Activity {
     });
   }
   public class Bridge {
+    @JavascriptInterface public String versionInfo(){try{android.content.pm.PackageInfo info=getPackageManager().getPackageInfo(getPackageName(),0);return info.versionName+"|"+info.versionCode;}catch(Exception e){return "2.10|30";}}
     @JavascriptInterface public void copy(String text){runOnUiThread(()->{ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);cb.setPrimaryClip(ClipData.newPlainText("Transcrição",text));Toast.makeText(MainActivity.this,"Texto copiado",Toast.LENGTH_SHORT).show();});}
-    @JavascriptInterface public void updateEngine(){pool.execute(()->MainActivity.this.updateEngine(true));}
-    @JavascriptInterface public void download(String url,String mode,String lang){pool.execute(()->downloadVideo(url,mode,lang));}
+    @JavascriptInterface public void updateEngine(){runProtected("Atualizando motor", () -> MainActivity.this.updateEngine(true));}
+    @JavascriptInterface public void download(String url,String mode,String lang){runProtected(mode.equals("video") ? "Baixando vídeo" : "Transcrevendo vídeo", () -> downloadVideo(url,mode,lang));}
     @JavascriptInterface public boolean modelReady(){File f=new File(new File(getFilesDir(),"models"),"ggml-base.bin");return f.length()>100_000_000L;}
-    @JavascriptInterface public void transcribeLocal(String uri,String lang){pool.execute(()->transcribePickedAudio(uri,lang));}
-    @JavascriptInterface public void translateTranscript(String text,String language){pool.execute(()->MainActivity.this.translateTranscript(text,language));}
-    @JavascriptInterface public void prepareModel(){pool.execute(()->{try{ensureModel();send("model_ready","Whisper pronto.");}catch(Exception e){send("error","Falha ao preparar Whisper: "+e.getMessage());}});}
+    @JavascriptInterface public void transcribeLocal(String uri,String lang){runProtected("Transcrevendo áudio", () -> transcribePickedAudio(uri,lang));}
+    @JavascriptInterface public void translateTranscript(String text,String language){runProtected("Traduzindo texto", () -> MainActivity.this.translateTranscript(text,language));}
+    @JavascriptInterface public void prepareModel(){runProtected("Preparando Whisper", () -> {try{ensureModel();send("model_ready","Whisper pronto.");}catch(Exception e){send("error","Falha ao preparar Whisper: "+e.getMessage());}});}
   }
   // API oficial verificada no código-fonte da biblioteca 0.18.1.
   private void updateEngine(boolean manual){
@@ -408,5 +441,5 @@ public class MainActivity extends Activity {
     pendingFiles.onReceiveValue(chosen!=null?new Uri[]{chosen}:null);
     if(chosen!=null)send("picked",chosen.toString());
     pendingFiles=null;}}
-  @Override protected void onDestroy(){pool.shutdownNow();super.onDestroy();}
+  @Override protected void onDestroy(){if(exitingByChoice || activeJobs.get()==0)pool.shutdownNow();super.onDestroy();}
 }
