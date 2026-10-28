@@ -1,0 +1,1 @@
+TubTok 2.20 Build 40: Integração inicial do extrator InstagramDownloader.kt fornecido pelo usuário (GPLv3). Prévia de publicações e carrosséis via data-sjs e download direto de mídias. Threads permanece indisponível. YouTube/TikTok preservados. Não compilado/testado em Android. Licença do código integrado: InstaDownload GPLv3; consultar LICENSE na raiz.

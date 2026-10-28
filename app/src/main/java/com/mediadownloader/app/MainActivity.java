@@ -170,6 +170,7 @@ public class MainActivity extends Activity {
     @JavascriptInterface public void copy(String text){runOnUiThread(()->{ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);cb.setPrimaryClip(ClipData.newPlainText("Transcrição",text));Toast.makeText(MainActivity.this,"Texto copiado",Toast.LENGTH_SHORT).show();});}
     @JavascriptInterface public void updateEngine(){runProtected("Atualizando motor", () -> MainActivity.this.updateEngine(true));}
     @JavascriptInterface public void inspectMedia(String url){runProtected("Consultando mídias", () -> inspectMediaNative(url));}
+    @JavascriptInterface public void downloadInstagramMedia(String url, boolean video){runProtected("Baixando mídia Instagram", () -> MainActivity.this.downloadInstagramMedia(url,video));}
     @JavascriptInterface public void download(String url,String mode,String lang){runProtected(mode.equals("video") ? "Baixando vídeo" : "Transcrevendo vídeo", () -> downloadVideo(url,mode,lang));}
     @JavascriptInterface public boolean modelReady(){File f=new File(new File(getFilesDir(),"models"),"ggml-base.bin");return f.length()>100_000_000L;}
     @JavascriptInterface public void transcribeLocal(String uri,String lang){runProtected("Transcrevendo áudio", () -> transcribePickedAudio(uri,lang));}
@@ -203,18 +204,23 @@ public class MainActivity extends Activity {
       if(url.matches("(?i)^https?://([^/]+\\.)?threads\\.(com|net)/.*")){
         throw new java.io.IOException("Threads: extrator experimental removido por apresentar falsos resultados. A consulta ainda não está disponível; não significa que a publicação esteja vazia.");
       }else if(url.matches("(?i)^https?://(www\\.)?instagram\\.com/.*")){
-        result.put("notice","O Instagram pode bloquear a consulta anônima. Tentando consultar metadados públicos do link.");
-        java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL(url).openConnection();c.setConnectTimeout(12000);c.setReadTimeout(15000);c.setRequestProperty("User-Agent","Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36");
-        int status=c.getResponseCode();result.put("http",status);
-        if(status!=200)throw new java.io.IOException("Instagram HTTP "+status+" "+c.getResponseMessage());
-        String html;try(java.io.InputStream in=c.getInputStream();java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()){byte[] data=new byte[8192];int n;while((n=in.read(data))!=-1 && out.size()<4000000)out.write(data,0,Math.min(n,4000000-out.size()));html=out.toString("UTF-8");}result.put("finalUrl",c.getURL().toString());result.put("htmlLength",html.length());
-        java.util.regex.Matcher m=java.util.regex.Pattern.compile("<meta[^>]+(?:property|name)=[\"']og:image[\"'][^>]+content=[\"']([^\"']+)",java.util.regex.Pattern.CASE_INSENSITIVE).matcher(html);
-        if(m.find()){org.json.JSONObject item=new org.json.JSONObject();item.put("url",url);item.put("type","post");item.put("thumb",m.group(1).replace("&amp;","&"));items.put(item);}
-        if(items.length()==0)result.put("notice","HTTP "+status+"; URL final="+c.getURL()+"; HTML="+html.length()+" caracteres. Nenhuma tag og:image reconhecida. O servidor pode ter entregue uma página de login ou conteúdo sem metadados. Não significa perfil vazio.");
-        else result.put("notice","Prévia pública encontrada. A listagem completa de perfis e Stories não está disponível sem acesso autorizado.");
+        java.util.List<MediaResult> media=InstagramDownloader.INSTANCE.getMediaItems(url, 1080);
+        for(MediaResult m:media){org.json.JSONObject item=new org.json.JSONObject();item.put("url",m.getUrl());item.put("type",m.isVideo()?"video":"image");item.put("thumb",m.getPreviewUrl());items.put(item);}
+        result.put("notice","Consulta de publicação pelo extrator InstaDownload. Selecione a mídia desejada.");
       }else throw new java.io.IOException("Plataforma não suportada para prévia.");
       result.put("items",items);send("media_result",result.toString());
     }catch(Exception e){Log.e("TubTok","Consulta de mídias falhou",e);String details=e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());try{org.json.JSONObject error=new org.json.JSONObject();error.put("url",url);error.put("error",details);send("media_error",error.toString());}catch(Exception ignored){Log.e("TubTok","Falha ao serializar erro",ignored);}}
+  }
+  private void downloadInstagramMedia(String url,boolean video){
+    File temp=null;
+    try{
+      if(!url.startsWith("https://") || !(new java.net.URL(url).getHost().endsWith(".cdninstagram.com") || new java.net.URL(url).getHost().endsWith(".fbcdn.net") || new java.net.URL(url).getHost().endsWith(".instagram.com")))throw new Exception("Endereço de mídia não autorizado");
+      temp=File.createTempFile("tubtok_ig_",video?".mp4":".jpg",getCacheDir());
+      try(java.io.FileOutputStream output=new java.io.FileOutputStream(temp)){InstagramDownloader.INSTANCE.downloadToStream(url,output);}
+      String saved=saveToDownloads(temp,"TubTok_Instagram_"+System.currentTimeMillis()+(video?".mp4":".jpg"));
+      send("video_saved",saved);send("done","Mídia Instagram salva.");
+    }catch(Exception e){Log.e("TubTok","Instagram download",e);send("error","Instagram: "+e.getClass().getSimpleName()+": "+e.getMessage());}
+    finally{if(temp!=null)temp.delete();}
   }
   private void downloadVideo(String url,String mode,String lang){
     if(!initialized){send("error","Motor ainda não foi inicializado.");return;}
