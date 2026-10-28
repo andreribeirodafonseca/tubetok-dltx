@@ -59,7 +59,7 @@ public class MainActivity extends Activity {
     FrameLayout frame=new FrameLayout(this);
     frame.setBackgroundColor(0xff050d1b);
     ImageView art=new ImageView(this);
-    try(InputStream stream=getAssets().open("splash_cinema.jpg")){
+    try(InputStream stream=getAssets().open("splash_novo.jpg")){
       art.setImageBitmap(BitmapFactory.decodeStream(stream));
     }catch(Exception e){art.setImageResource(R.mipmap.ic_launcher);}
     art.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -166,7 +166,7 @@ public class MainActivity extends Activity {
     });
   }
   public class Bridge {
-    @JavascriptInterface public String versionInfo(){try{android.content.pm.PackageInfo info=getPackageManager().getPackageInfo(getPackageName(),0);return info.versionName+"|"+info.versionCode;}catch(Exception e){return "2.10|30";}}
+    @JavascriptInterface public String versionInfo(){try{android.content.pm.PackageInfo info=getPackageManager().getPackageInfo(getPackageName(),0);return info.versionName+"|"+info.versionCode;}catch(Exception e){return "2.12|32";}}
     @JavascriptInterface public void copy(String text){runOnUiThread(()->{ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);cb.setPrimaryClip(ClipData.newPlainText("Transcrição",text));Toast.makeText(MainActivity.this,"Texto copiado",Toast.LENGTH_SHORT).show();});}
     @JavascriptInterface public void updateEngine(){runProtected("Atualizando motor", () -> MainActivity.this.updateEngine(true));}
     @JavascriptInterface public void download(String url,String mode,String lang){runProtected(mode.equals("video") ? "Baixando vídeo" : "Transcrevendo vídeo", () -> downloadVideo(url,mode,lang));}
@@ -179,9 +179,9 @@ public class MainActivity extends Activity {
   private void updateEngine(boolean manual){
     if(!initialized){send("warning","Motor ainda inicializando.");return;}
     try{
-      send("progress","Atualizando motor yt-dlp pelo canal estável...");
+      send("progress","Atualizando motor yt-dlp pelo canal nightly...");
       YoutubeDL.UpdateStatus result=YoutubeDL.getInstance().updateYoutubeDL(
-          getApplicationContext(), YoutubeDL.UpdateChannel._STABLE);
+          getApplicationContext(), YoutubeDL.UpdateChannel._NIGHTLY);
       String version=YoutubeDL.getInstance().versionName(getApplicationContext());
       if(result==YoutubeDL.UpdateStatus.ALREADY_UP_TO_DATE)
         send("ready","Motor já atualizado. Versão: "+String.valueOf(version));
@@ -205,14 +205,28 @@ public class MainActivity extends Activity {
       // O redirecionamento não corrige bloqueios de fingerprint/TLS do TikTok.
       if(url.matches("(?i)^https?://(www\\.)?instagram\\.com/[^/?#]+/?([?#].*)?$"))
         throw new Exception("PROFILE_LIST_UNAVAILABLE");
+      if(mode.equals("video") && url.matches("(?i)^https?://([^/]+\\.)?threads\\.(com|net)/.*")){
+        send("progress","Consultando publicação pública do Threads...");
+        java.util.List<ThreadsExtractor.Media> media=ThreadsExtractor.resolve(url);
+        int count=0;
+        for(ThreadsExtractor.Media item:media){
+          File target=new File(dir,"threads_"+(++count)+"."+item.extension);
+          ThreadsExtractor.download(item,target);
+          String saved=saveToDownloads(target,"TubTok_Threads_"+System.currentTimeMillis()+"_"+count+"."+item.extension);
+          send("video_saved",saved);
+        }
+        send("done",count+" arquivo(s) do Threads salvo(s) em Downloads/TubTok.");
+        return;
+      }
       if(mode.equals("video")){
         YoutubeDLRequest req=new YoutubeDLRequest(url);
         req.addOption("-f","best[ext=mp4]/best");
+        req.addOption("--no-mtime");
         req.addOption("--no-playlist");req.addOption("--no-part");
         req.addOption("-o",new File(dir,"video.%(ext)s").getAbsolutePath());
         YoutubeDL.getInstance().execute(req, "video-"+System.currentTimeMillis(), (progress, eta, line)->{if(progress>=0)send("progress",String.format(java.util.Locale.US,"Baixando vídeo: %.0f%%",progress));return kotlin.Unit.INSTANCE;});
-        File video=null;for(File f:Objects.requireNonNull(dir.listFiles()))if(f.isFile()&&(f.getName().endsWith(".mp4")||f.getName().endsWith(".webm")||f.getName().endsWith(".mkv"))){video=f;break;}
-        if(video==null)throw new Exception("Nenhum vídeo encontrado após download.");
+        File video=null;for(File f:Objects.requireNonNull(dir.listFiles()))if(f.isFile()&&(f.getName().endsWith(".mp4")||f.getName().endsWith(".webm")||f.getName().endsWith(".mkv")||f.getName().endsWith(".jpg")||f.getName().endsWith(".jpeg")||f.getName().endsWith(".png")||f.getName().endsWith(".webp"))){video=f;break;}
+        if(video==null)throw new Exception("Nenhuma mídia compatível encontrada após download.");
         String saved=saveToDownloads(video,"TubTok_"+System.currentTimeMillis()+"."+video.getName().substring(video.getName().lastIndexOf('.')+1));
         send("video_saved",saved);
       }else if(mode.equals("transcribe")||mode.equals("video_transcribe")){
@@ -257,7 +271,7 @@ public class MainActivity extends Activity {
         friendly="Não foi possível receber o arquivo. Confira a conexão e tente novamente.";
       } else {
         // Nunca exibir o stderr inteiro: WARNINGS não são diagnóstico final.
-        friendly="Não foi possível obter a mídia. Confira o link, a conexão e a atualização do motor.";
+        friendly="Não foi possível obter a mídia. Diagnóstico: "+raw.substring(0,Math.min(raw.length(),350));
       }
       send("error",friendly);
     }
@@ -437,7 +451,7 @@ public class MainActivity extends Activity {
   }
   private String read(File f)throws Exception{ByteArrayOutputStream out=new ByteArrayOutputStream();try(InputStream in=new FileInputStream(f)){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}return out.toString("UTF-8");}
   private String saveToDownloads(File src,String name)throws Exception{
-    android.content.ContentValues v=new android.content.ContentValues();v.put(MediaStore.Downloads.DISPLAY_NAME,name);v.put(MediaStore.Downloads.MIME_TYPE,name.endsWith(".srt")?"text/plain":name.endsWith(".txt")?"text/plain":"video/mp4");
+    android.content.ContentValues v=new android.content.ContentValues();v.put(MediaStore.Downloads.DISPLAY_NAME,name);v.put(MediaStore.Downloads.MIME_TYPE,name.matches("(?i).*\\.(jpg|jpeg)")?"image/jpeg":name.matches("(?i).*\\.png")?"image/png":name.matches("(?i).*\\.webp")?"image/webp":name.endsWith(".srt")||name.endsWith(".txt")?"text/plain":"video/mp4");
     if(android.os.Build.VERSION.SDK_INT>=29)v.put(MediaStore.Downloads.RELATIVE_PATH,Environment.DIRECTORY_DOWNLOADS+"/TubTok");
     Uri uri=getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,v);if(uri==null)throw new Exception("Não foi possível criar arquivo em Downloads");
     try(InputStream in=new FileInputStream(src);OutputStream out=getContentResolver().openOutputStream(uri)){byte[] b=new byte[65536];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}return name;

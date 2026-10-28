@@ -1,7 +1,18 @@
-# TubTok v2.11 — protótipo parcial, não validado em APK
+# TubTok v2.12 — Identidade visual aprovada
 
-Base: TubTok v2.10. Atualização de versão, interface de abas Instagram e reconhecimento de links individuais.
+Projeto Android completo, baseado na v2.11 parcial.
 
-LIMITAÇÕES IMPORTANTES: NÃO há listagem real de perfil Instagram; NÃO há suporte implementado para imagens de postagens; Stories podem exigir login; Threads depende de plugin yt-dlp-threads que NÃO está incluído neste ZIP. A aba de Instagram não consulta conteúdo remoto e não deve ser apresentada como implementação concluída. Download direto de Reel/post depende do extrator yt-dlp já existente e não foi testado.
+## Alterações
+- Nova logo escolhida pelo usuário: caixa de download, YouTube, TikTok, Instagram, Threads e CC discreto.
+- Ícone Android atualizado em todas as densidades.
+- Splash vertical escuro com a nova logo e indicador nativo real de inicialização sobreposto.
+- Logo interna atualizada.
+- Versão 2.12 / Build 32.
 
-Projeto ZIP íntegro; compilação Gradle e teste em Android NÃO executados.
+## Compilar
+Importar ZIP no Codemagic e executar workflow `android-build` (`gradle assembleDebug`).
+
+## Limitações
+Não foi possível compilar ou testar em dispositivo neste ambiente.
+A base v2.11 é parcial: listagem de Instagram e suporte a Threads ainda não estão completos.
+Não há alteração nos extratores ou funcionalidades de download nesta entrega visual.
