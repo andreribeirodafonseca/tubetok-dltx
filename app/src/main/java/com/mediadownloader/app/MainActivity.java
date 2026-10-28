@@ -208,10 +208,10 @@ public class MainActivity extends Activity {
         java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL(url).openConnection();c.setConnectTimeout(12000);c.setReadTimeout(15000);c.setRequestProperty("User-Agent","Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36");
         int status=c.getResponseCode();result.put("http",status);
         if(status!=200)throw new java.io.IOException("Instagram HTTP "+status+" "+c.getResponseMessage());
-        String html;try(java.io.InputStream in=c.getInputStream()){byte[] data=new byte[2500000];int n=in.read(data);html=n>0?new String(data,0,n,java.nio.charset.StandardCharsets.UTF_8):"";}
+        String html;try(java.io.InputStream in=c.getInputStream();java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()){byte[] data=new byte[8192];int n;while((n=in.read(data))!=-1 && out.size()<4000000)out.write(data,0,Math.min(n,4000000-out.size()));html=out.toString("UTF-8");}result.put("finalUrl",c.getURL().toString());result.put("htmlLength",html.length());
         java.util.regex.Matcher m=java.util.regex.Pattern.compile("<meta[^>]+(?:property|name)=[\"']og:image[\"'][^>]+content=[\"']([^\"']+)",java.util.regex.Pattern.CASE_INSENSITIVE).matcher(html);
         if(m.find()){org.json.JSONObject item=new org.json.JSONObject();item.put("url",url);item.put("type","post");item.put("thumb",m.group(1).replace("&amp;","&"));items.put(item);}
-        if(items.length()==0)result.put("notice","HTTP "+status+": página recebida, mas não trouxe miniaturas públicas no HTML. Isso NÃO significa perfil vazio ou privado.");
+        if(items.length()==0)result.put("notice","HTTP "+status+"; URL final="+c.getURL()+"; HTML="+html.length()+" caracteres. Nenhuma tag og:image reconhecida. O servidor pode ter entregue uma página de login ou conteúdo sem metadados. Não significa perfil vazio.");
         else result.put("notice","Prévia pública encontrada. A listagem completa de perfis e Stories não está disponível sem acesso autorizado.");
       }else throw new java.io.IOException("Plataforma não suportada para prévia.");
       result.put("items",items);send("media_result",result.toString());

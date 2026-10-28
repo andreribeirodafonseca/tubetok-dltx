@@ -31,14 +31,9 @@ public final class ThreadsExtractor {
       String ext=candidate.replaceAll("(?i)^.*\\.(mp4|jpg|jpeg|png|webp)(?:\\?.*)?$","$1").toLowerCase(Locale.ROOT);
       if(!Arrays.asList("mp4","jpg","jpeg","png","webp").contains(ext))continue;
       if(!(candidate.contains("cdninstagram.com")||candidate.contains("fbcdn.net")))continue;
-      // When post code is known, prioritize candidates close to its occurrence in page JSON.
-      if(!shortcode.isEmpty()){
-        int position=matcher.start();int nearest=decoded.lastIndexOf(shortcode,position);
-        if(nearest<0 || position-nearest>250000)continue;
-      }
       found.putIfAbsent(candidate,new Media(candidate,ext));if(found.size()>=25)break;
     }
-    if(found.isEmpty())throw new IOException("Nenhuma mídia pública encontrada no Threads. A publicação pode exigir login ou a estrutura da página mudou.");
+    if(found.isEmpty())throw new IOException("Threads HTTP "+status+"; URL final="+canonical+"; HTML="+html.length()+" caracteres; shortcode="+shortcode+"; nenhuma URL CDN mp4/jpg/png/webp reconhecida. O HTML pode conter uma tela de login ou dados em JSON com outro formato.");
     return new ArrayList<>(found.values());
   }
   private static byte[] readLimited(InputStream in,int limit)throws IOException{ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] b=new byte[16384];int n;while((n=in.read(b))!=-1){if(out.size()+n>limit)throw new IOException("Página do Threads muito grande");out.write(b,0,n);}return out.toByteArray();}
