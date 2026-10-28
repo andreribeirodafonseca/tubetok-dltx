@@ -1,5 +1,5 @@
 const $=id=>document.getElementById(id);let fileMode=false;let selectedAudioUri=null;
-function update(){$('linkBox').hidden=fileMode;$('fileBox').hidden=!fileMode;$('actionBox').hidden=fileMode;$('sourceLink').classList.toggle('active',!fileMode);$('sourceFile').classList.toggle('active',fileMode);$('start').textContent=fileMode?'Transcrever arquivo':$('mode').value==='video'?'Baixar MP4':'Transcrever e gerar';$('langBox').hidden=!fileMode&&$('mode').value==='video';}
+function update(){$('linkBox').hidden=fileMode;$('fileBox').hidden=!fileMode;$('actionBox').hidden=fileMode;$('sourceLink').classList.toggle('active',!fileMode);$('sourceFile').classList.toggle('active',fileMode);$('instagramPanel').hidden=fileMode||!/(^https?:\/\/)?(www\.)?instagram\.com\//i.test($('url').value.trim());$('start').textContent=fileMode?'Transcrever arquivo':$('mode').value==='video'?'Baixar MP4':'Transcrever e gerar';$('langBox').hidden=!fileMode&&$('mode').value==='video';}
 $('sourceLink').onclick=()=>{fileMode=false;update()};$('sourceFile').onclick=()=>{fileMode=true;update()};$('mode').onchange=update;
 function notice(message,isError=false){$('notice').textContent=message;$('notice').className='notice '+(isError?'error':'');}
 $('start').onclick=()=>{if(fileMode){if(!selectedAudioUri){notice('Escolha um arquivo de áudio.',true);return;}$('start').disabled=true;resetProgress();$('files').textContent='';$('transcriptBox').hidden=true;$('translationBox').hidden=true;AndroidBridge.transcribeLocal(selectedAudioUri,$('lang').value);return;}let url=$('url').value.trim();if(!/^https?:\/\//i.test(url)){notice('Cole um link válido.',true);return;}if(!window.AndroidBridge){notice('Abra pelo aplicativo Android.',true);return;}$('start').disabled=true;resetProgress();$('files').textContent='';$('transcriptBox').hidden=true;$('translationBox').hidden=true;notice('Iniciando download...');AndroidBridge.download(url,$('mode').value,$('lang').value);};
@@ -38,3 +38,20 @@ $('translationRoute').onchange=refreshTranslationRoute; $('lang').addEventListen
 
 // Fonte única de versão: metadados do APK, sem números divergentes na interface.
 (function(){try{if(window.AndroidBridge && typeof AndroidBridge.versionInfo === "function"){const parts=String(AndroidBridge.versionInfo()).split("|");if(parts.length===2){const h=document.getElementById("headerVersion"),f=document.getElementById("footerVersion");if(h)h.textContent="v"+parts[0];if(f)f.textContent="v"+parts[0]+" • Build "+parts[1];document.title="TubTok v"+parts[0];}}}catch(e){console.warn("Versão nativa indisponível",e);}})();
+
+// Instagram: abas para URLs individuais, sem fingir que um perfil privado foi consultado.
+let instagramTab='reels';
+function updateInstagram(){
+ const url=$('url').value.trim();const isIG=/^https?:\/\/(www\.)?instagram\.com\//i.test(url);
+ $('instagramPanel').hidden=fileMode||!isIG;if(!isIG)return;
+ const reel=/\/(reel|reels)\//i.test(url),post=/\/p\//i.test(url),story=/\/stories\//i.test(url);
+ const profile=/^https?:\/\/(www\.)?instagram\.com\/[^/?#]+\/?(?:[?#].*)?$/i.test(url);
+ $('igItems').textContent='';
+ if(profile){$('igStatus').textContent='Perfil detectado. A listagem completa de Reels, imagens e Stories ainda não está disponível nesta versão; não é possível afirmar que o perfil esteja vazio ou privado.';return;}
+ const matches=instagramTab==='reels'?(reel||post):instagramTab==='images'?post:story;
+ $('igStatus').textContent=matches?'Publicação identificada. Toque em Baixar para tentar obter a mídia disponível.':'Nenhum item desta categoria identificado no link informado. Isso não indica que o perfil esteja vazio.';
+ if(matches){const b=document.createElement('button');b.type='button';b.textContent='⬇️ Baixar conteúdo deste link';b.onclick=()=>{if(!window.AndroidBridge){notice('Abra no Android.',true);return;}$('start').disabled=true;notice('Consultando publicação...');AndroidBridge.download(url,'video','all');};$('igItems').appendChild(b);}
+}
+$('url').addEventListener('input',updateInstagram);
+document.querySelectorAll('[data-ig]').forEach(b=>b.addEventListener('click',()=>{instagramTab=b.dataset.ig;document.querySelectorAll('[data-ig]').forEach(x=>x.classList.toggle('active',x===b));updateInstagram();}));
+$('sourceLink').addEventListener('click',updateInstagram);$('sourceFile').addEventListener('click',updateInstagram);

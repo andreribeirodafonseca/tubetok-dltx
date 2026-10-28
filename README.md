@@ -1,19 +1,7 @@
-# TubTok v2.9 — Build 29
+# TubTok v2.11 — protótipo parcial, não validado em APK
 
-Proteção contra saída acidental durante download, conversão, transcrição, tradução e preparação do modelo.
+Base: TubTok v2.10. Atualização de versão, interface de abas Instagram e reconhecimento de links individuais.
 
-- Botão Voltar abre diálogo de confirmação quando há tarefas ativas.
-- Serviço Android em primeiro plano e notificação enquanto a tarefa roda, para reduzir encerramentos pelo sistema quando a tela é minimizada.
-- Sem checkpoint nem retomada de transcrição.
-- FFmpeg separado permanece ausente.
-- Preservadas as funções da v2.8.
+LIMITAÇÕES IMPORTANTES: NÃO há listagem real de perfil Instagram; NÃO há suporte implementado para imagens de postagens; Stories podem exigir login; Threads depende de plugin yt-dlp-threads que NÃO está incluído neste ZIP. A aba de Instagram não consulta conteúdo remoto e não deve ser apresentada como implementação concluída. Download direto de Reel/post depende do extrator yt-dlp já existente e não foi testado.
 
-Limites: Android não permite interceptar Forçar parada, encerramento pelo sistema, ou gesto de remover a tarefa dos recentes para exigir confirmação. O serviço aumenta a prioridade do processo, mas não garante execução ininterrupta. O código ainda executa as tarefas na Activity; para resiliência completa ao descarte da Activity seria preciso mover o motor para o Service.
-
-Não foi compilado ou testado em aparelho.
-
-
-## v2.10 / Build 30
-- Logo PNG com transparência no cabeçalho, substituindo o símbolo ▶.
-- Versão exibida no cabeçalho e rodapé derivada dos metadados nativos do APK.
-- Preservados os demais recursos da v2.9.
+Projeto ZIP íntegro; compilação Gradle e teste em Android NÃO executados.

@@ -200,9 +200,11 @@ public class MainActivity extends Activity {
     if(!url.matches("(?i)^https?://[^\\s]+")){send("error","Informe um link válido.");return;}
     File dir=new File(getCacheDir(),"videos-"+System.currentTimeMillis());dir.mkdirs();
     try{
-      send("progress","Obtendo vídeo do YouTube ou TikTok...");
+      send("progress","Consultando mídia da plataforma...");
       // Links curtos vt.tiktok.com são aceitos diretamente pelo extrator yt-dlp.
       // O redirecionamento não corrige bloqueios de fingerprint/TLS do TikTok.
+      if(url.matches("(?i)^https?://(www\\.)?instagram\\.com/[^/?#]+/?([?#].*)?$"))
+        throw new Exception("PROFILE_LIST_UNAVAILABLE");
       if(mode.equals("video")){
         YoutubeDLRequest req=new YoutubeDLRequest(url);
         req.addOption("-f","best[ext=mp4]/best");
@@ -237,7 +239,11 @@ public class MainActivity extends Activity {
       Log.e("TubTok","Falha ao obter mídia; mensagem completa: "+raw,ex);
       String low=raw.toLowerCase(java.util.Locale.ROOT);
       String friendly;
-      if(low.contains("impersonat") || low.contains("status code 0") ||
+      if(low.contains("profile_list_unavailable")) {
+        friendly="A listagem completa de perfis do Instagram não está disponível. Cole o link direto de um Reel, publicação ou Story acessível.";
+      } else if(low.contains("login required") || low.contains("login_required") || low.contains("private account")) {
+        friendly="Este conteúdo do Instagram exige login ou não está disponível publicamente. Não é possível afirmar que o perfil esteja vazio.";
+      } else if((low.contains("impersonat") || low.contains("status code 0")) && url.contains("tiktok.com") ||
          low.contains("unable to extract webpage video data") || low.contains("video not available")) {
         friendly="O TikTok não liberou este vídeo para o motor de download no Android. " +
           "O site pode exigir identificação de navegador não disponível nesta versão. " +
@@ -246,7 +252,7 @@ public class MainActivity extends Activity {
       } else if(low.contains("403") || low.contains("forbidden")) {
         friendly="A plataforma recusou o acesso ao vídeo (HTTP 403). Atualize o yt-dlp e tente novamente.";
       } else if(low.contains("unsupported url")) {
-        friendly="O link não é reconhecido pelo yt-dlp. Confira o endereço do vídeo.";
+        friendly=url.contains("threads.com")||url.contains("threads.net") ? "O extrator de Threads ainda não está integrado ao APK. Este link não pode ser baixado nesta versão." : "O link não é reconhecido pelo yt-dlp. Confira o endereço do vídeo.";
       } else if(low.contains("unable to download") || low.contains("timed out") || low.contains("network")) {
         friendly="Não foi possível receber o arquivo. Confira a conexão e tente novamente.";
       } else {
