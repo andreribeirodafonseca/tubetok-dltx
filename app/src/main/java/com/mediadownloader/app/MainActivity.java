@@ -169,6 +169,7 @@ public class MainActivity extends Activity {
     @JavascriptInterface public String versionInfo(){try{android.content.pm.PackageInfo info=getPackageManager().getPackageInfo(getPackageName(),0);return info.versionName+"|"+info.versionCode;}catch(Exception e){return "2.12|32";}}
     @JavascriptInterface public void copy(String text){runOnUiThread(()->{ClipboardManager cb=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);cb.setPrimaryClip(ClipData.newPlainText("Transcrição",text));Toast.makeText(MainActivity.this,"Texto copiado",Toast.LENGTH_SHORT).show();});}
     @JavascriptInterface public void updateEngine(){runProtected("Atualizando motor", () -> MainActivity.this.updateEngine(true));}
+    @JavascriptInterface public void inspectMedia(String url){runProtected("Consultando mídias", () -> inspectMediaNative(url));}
     @JavascriptInterface public void download(String url,String mode,String lang){runProtected(mode.equals("video") ? "Baixando vídeo" : "Transcrevendo vídeo", () -> downloadVideo(url,mode,lang));}
     @JavascriptInterface public boolean modelReady(){File f=new File(new File(getFilesDir(),"models"),"ggml-base.bin");return f.length()>100_000_000L;}
     @JavascriptInterface public void transcribeLocal(String uri,String lang){runProtected("Transcrevendo áudio", () -> transcribePickedAudio(uri,lang));}
@@ -194,6 +195,27 @@ public class MainActivity extends Activity {
       if(detail.length()>280)detail=detail.substring(0,280);
       send("warning","Falha real da atualização: "+ex.getClass().getSimpleName()+" — "+detail);
     }
+  }
+  private void inspectMediaNative(String url){
+    try{
+      org.json.JSONObject result=new org.json.JSONObject();result.put("url",url);
+      org.json.JSONArray items=new org.json.JSONArray();
+      if(url.matches("(?i)^https?://([^/]+\\.)?threads\\.(com|net)/.*")){
+        java.util.List<ThreadsExtractor.Media> found=ThreadsExtractor.resolve(url);
+        for(ThreadsExtractor.Media media:found){org.json.JSONObject item=new org.json.JSONObject();item.put("url",media.url);item.put("type",media.extension.equals("mp4")?"video":"image");item.put("thumb",media.extension.equals("mp4")?"":media.url);items.put(item);}
+      }else if(url.matches("(?i)^https?://(www\\.)?instagram\\.com/.*")){
+        result.put("notice","O Instagram pode bloquear a consulta anônima. Tentando consultar metadados públicos do link.");
+        java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL(url).openConnection();c.setConnectTimeout(12000);c.setReadTimeout(15000);c.setRequestProperty("User-Agent","Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36");
+        int status=c.getResponseCode();result.put("http",status);
+        if(status!=200)throw new java.io.IOException("Instagram HTTP "+status+" "+c.getResponseMessage());
+        String html;try(java.io.InputStream in=c.getInputStream()){byte[] data=new byte[2500000];int n=in.read(data);html=n>0?new String(data,0,n,java.nio.charset.StandardCharsets.UTF_8):"";}
+        java.util.regex.Matcher m=java.util.regex.Pattern.compile("<meta[^>]+(?:property|name)=[\"']og:image[\"'][^>]+content=[\"']([^\"']+)",java.util.regex.Pattern.CASE_INSENSITIVE).matcher(html);
+        if(m.find()){org.json.JSONObject item=new org.json.JSONObject();item.put("url",url);item.put("type","post");item.put("thumb",m.group(1).replace("&amp;","&"));items.put(item);}
+        if(items.length()==0)result.put("notice","HTTP "+status+": página recebida, mas não trouxe miniaturas públicas no HTML. Isso NÃO significa perfil vazio ou privado.");
+        else result.put("notice","Prévia pública encontrada. A listagem completa de perfis e Stories não está disponível sem acesso autorizado.");
+      }else throw new java.io.IOException("Plataforma não suportada para prévia.");
+      result.put("items",items);send("media_result",result.toString());
+    }catch(Exception e){Log.e("TubTok","Consulta de mídias falhou",e);String details=e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());send("media_error",details);}
   }
   private void downloadVideo(String url,String mode,String lang){
     if(!initialized){send("error","Motor ainda não foi inicializado.");return;}
@@ -273,7 +295,7 @@ public class MainActivity extends Activity {
         // Nunca exibir o stderr inteiro: WARNINGS não são diagnóstico final.
         friendly="Não foi possível obter a mídia. Diagnóstico: "+raw.substring(0,Math.min(raw.length(),350));
       }
-      send("error",friendly);
+      send("error",friendly+"\n\nERRO TÉCNICO: "+ex.getClass().getName()+": "+raw);
     }
     finally{deleteDirectory(dir);}
   }

@@ -55,3 +55,23 @@ function updateInstagram(){
 $('url').addEventListener('input',updateInstagram);
 document.querySelectorAll('[data-ig]').forEach(b=>b.addEventListener('click',()=>{instagramTab=b.dataset.ig;document.querySelectorAll('[data-ig]').forEach(x=>x.classList.toggle('active',x===b));updateInstagram();}));
 $('sourceLink').addEventListener('click',updateInstagram);$('sourceFile').addEventListener('click',updateInstagram);
+
+// Pré-visualização consultada pelo Android. Erros não são tratados como perfil vazio.
+let inspectTimer=null;
+function inspectLink(){const u=$('url').value.trim();if(!/^https?:\/\/(?:www\.)?(instagram\.com|threads\.(?:com|net))\//i.test(u))return;
+ const panel=$('instagramPanel');panel.hidden=false;$('igStatus').textContent='Consultando mídias públicas...';$('igItems').replaceChildren();
+ if(window.AndroidBridge && AndroidBridge.inspectMedia)AndroidBridge.inspectMedia(u);else $('igStatus').textContent='Consulta disponível no aplicativo Android.';
+}
+$('url').addEventListener('blur',inspectLink);
+$('url').addEventListener('input',()=>{clearTimeout(inspectTimer);inspectTimer=setTimeout(inspectLink,1100);});
+const previousNativeEvent=window.nativeEvent;
+window.nativeEvent=(type,message)=>{
+ if(type==='media_error'){$('instagramPanel').hidden=false;$('igStatus').textContent='Falha real da consulta: '+message+' — Isso não significa que o perfil esteja vazio.';return;}
+ if(type==='media_result'){
+   try{const data=JSON.parse(message);$('instagramPanel').hidden=false;$('igItems').replaceChildren();const arr=data.items||[];
+     $('igStatus').textContent=(data.notice||'Consulta concluída.')+' • '+arr.length+' prévia(s) encontrada(s).';
+     for(const item of arr){const card=document.createElement('div');card.className='media-card';if(item.thumb){const img=document.createElement('img');img.src=item.thumb;img.alt='Miniatura';img.loading='lazy';card.appendChild(img);}const label=document.createElement('span');label.textContent=item.type==='video'?'🎬 Vídeo':item.type==='image'?'🖼️ Imagem':'📸 Publicação';card.appendChild(label);const b=document.createElement('button');b.type='button';b.textContent='⬇ Baixar';b.onclick=()=>{if(AndroidBridge?.download)AndroidBridge.download(item.type==='post'?item.url:item.url,'video','all');};card.appendChild(b);$('igItems').appendChild(card);}
+   }catch(e){$('igStatus').textContent='Falha ao interpretar resultado: '+e.message;}return;
+ }
+ previousNativeEvent(type,message);
+};
