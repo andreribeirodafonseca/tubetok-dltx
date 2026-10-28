@@ -39,38 +39,34 @@ $('translationRoute').onchange=refreshTranslationRoute; $('lang').addEventListen
 // Fonte única de versão: metadados do APK, sem números divergentes na interface.
 (function(){try{if(window.AndroidBridge && typeof AndroidBridge.versionInfo === "function"){const parts=String(AndroidBridge.versionInfo()).split("|");if(parts.length===2){const h=document.getElementById("headerVersion"),f=document.getElementById("footerVersion");if(h)h.textContent="v"+parts[0];if(f)f.textContent="v"+parts[0]+" • Build "+parts[1];document.title="TubTok v"+parts[0];}}}catch(e){console.warn("Versão nativa indisponível",e);}})();
 
-// Instagram: abas para URLs individuais, sem fingir que um perfil privado foi consultado.
-let instagramTab='reels';
-function updateInstagram(){
- const url=$('url').value.trim();const isIG=/^https?:\/\/(www\.)?instagram\.com\//i.test(url);
- $('instagramPanel').hidden=fileMode||!isIG;if(!isIG)return;
- const reel=/\/(reel|reels)\//i.test(url),post=/\/p\//i.test(url),story=/\/stories\//i.test(url);
- const profile=/^https?:\/\/(www\.)?instagram\.com\/[^/?#]+\/?(?:[?#].*)?$/i.test(url);
- $('igItems').textContent='';
- if(profile){$('igStatus').textContent='Perfil detectado. A listagem completa de Reels, imagens e Stories ainda não está disponível nesta versão; não é possível afirmar que o perfil esteja vazio ou privado.';return;}
- const matches=instagramTab==='reels'?(reel||post):instagramTab==='images'?post:story;
- $('igStatus').textContent=matches?'Publicação identificada. Toque em Baixar para tentar obter a mídia disponível.':'Nenhum item desta categoria identificado no link informado. Isso não indica que o perfil esteja vazio.';
- if(matches){const b=document.createElement('button');b.type='button';b.textContent='⬇️ Baixar conteúdo deste link';b.onclick=()=>{if(!window.AndroidBridge){notice('Abra no Android.',true);return;}$('start').disabled=true;notice('Consultando publicação...');AndroidBridge.download(url,'video','all');};$('igItems').appendChild(b);}
-}
-$('url').addEventListener('input',updateInstagram);
-document.querySelectorAll('[data-ig]').forEach(b=>b.addEventListener('click',()=>{instagramTab=b.dataset.ig;document.querySelectorAll('[data-ig]').forEach(x=>x.classList.toggle('active',x===b));updateInstagram();}));
-$('sourceLink').addEventListener('click',updateInstagram);$('sourceFile').addEventListener('click',updateInstagram);
+// Abas do Instagram filtram apenas mídias retornadas pela consulta nativa.
+let instagramTab='all';
+document.querySelectorAll('[data-ig]').forEach(button=>button.addEventListener('click',()=>{
+ instagramTab=button.dataset.ig;
+ document.querySelectorAll('[data-ig]').forEach(x=>x.classList.toggle('active',x===button));
+ document.querySelectorAll('#igItems .media-card').forEach(card=>{
+  card.hidden=instagramTab==='reels'?card.dataset.kind!=='video':instagramTab==='images'?card.dataset.kind!=='image':instagramTab==='stories';
+ });
+ if(instagramTab==='stories')$('igStatus').textContent='Stories exigem consulta autorizada e não estão disponíveis nesta versão.';
+}));
 
 // Pré-visualização consultada pelo Android. Erros não são tratados como perfil vazio.
-let inspectTimer=null;
+let inspectTimer=null; let activeInspectionUrl=''; let inspectionSerial=0;
+function resetMediaPanels(){for(const prefix of ['ig','threads']){$(prefix+'Status').textContent='';$(prefix+'Items').replaceChildren();} $('instagramPanel').hidden=true;$('threadsPanel').hidden=true;}
+function onMediaUrlChanged(){inspectionSerial++;activeInspectionUrl='';clearTimeout(inspectTimer);resetMediaPanels();update();const u=$('url').value.trim();if(/^https?:\/\/(?:www\.)?(instagram\.com|threads\.(?:com|net))\//i.test(u)){inspectTimer=setTimeout(inspectLink,850);}}
 function inspectLink(){const u=$('url').value.trim();if(!/^https?:\/\/(?:www\.)?(instagram\.com|threads\.(?:com|net))\//i.test(u))return;
- const isThreads=/^https?:\/\/(?:www\.)?threads\.(?:com|net)\//i.test(u);const panel=$(isThreads?'threadsPanel':'instagramPanel');panel.hidden=false;$(isThreads?'threadsStatus':'igStatus').textContent='Consultando mídias públicas...';$(isThreads?'threadsItems':'igItems').replaceChildren();
+ activeInspectionUrl=u; const isThreads=/^https?:\/\/(?:www\.)?threads\.(?:com|net)\//i.test(u);const panel=$(isThreads?'threadsPanel':'instagramPanel');panel.hidden=false;$(isThreads?'threadsStatus':'igStatus').textContent='Consultando mídias públicas...';$(isThreads?'threadsItems':'igItems').replaceChildren();
  if(window.AndroidBridge && AndroidBridge.inspectMedia)AndroidBridge.inspectMedia(u);else $('igStatus').textContent='Consulta disponível no aplicativo Android.';
 }
-$('url').addEventListener('blur',inspectLink);
-$('url').addEventListener('input',()=>{clearTimeout(inspectTimer);inspectTimer=setTimeout(inspectLink,1100);});
+$('url').addEventListener('blur',()=>{if(activeInspectionUrl!==$('url').value.trim())inspectLink();});
+$('url').addEventListener('input',onMediaUrlChanged);
 const previousNativeEvent=window.nativeEvent;
 window.nativeEvent=(type,message)=>{
- if(type==='media_error'){const th=/threads\.(com|net)/i.test($('url').value);const panel=$(th?'threadsPanel':'instagramPanel');panel.hidden=false;$(th?'threadsStatus':'igStatus').textContent='Falha na consulta: '+message+' — Isso não significa que a publicação esteja vazia.';return;}
+ if(type==='media_error'){let errorData;try{errorData=JSON.parse(message)}catch(e){return;}if(errorData.url!==activeInspectionUrl||errorData.url!==$('url').value.trim())return;const th=/threads\.(com|net)/i.test(errorData.url);const panel=$(th?'threadsPanel':'instagramPanel');panel.hidden=false;$(th?'threadsStatus':'igStatus').textContent='Falha na consulta: '+errorData.error+' — Isso não significa que a publicação esteja vazia.';return;}
  if(type==='media_result'){
-   try{const data=JSON.parse(message);if(data.url!==$('url').value.trim())return;const th=/threads\.(com|net)/i.test(data.url);const panel=$(th?'threadsPanel':'instagramPanel');const status=$(th?'threadsStatus':'igStatus');const items=$(th?'threadsItems':'igItems');panel.hidden=false;items.replaceChildren();const arr=data.items||[];
+   try{const data=JSON.parse(message);if(data.url!==activeInspectionUrl||data.url!==$('url').value.trim())return;const th=/threads\.(com|net)/i.test(data.url);const panel=$(th?'threadsPanel':'instagramPanel');const status=$(th?'threadsStatus':'igStatus');const items=$(th?'threadsItems':'igItems');panel.hidden=false;items.replaceChildren();const arr=data.items||[];
      status.textContent=(data.notice||'Consulta concluída.')+' • '+arr.length+' prévia(s) encontrada(s).';
-     for(const item of arr){const card=document.createElement('div');card.className='media-card';if(item.thumb){const img=document.createElement('img');img.src=item.thumb;img.alt='Miniatura';img.loading='lazy';card.appendChild(img);}const label=document.createElement('span');label.textContent=item.type==='video'?'🎬 Vídeo':item.type==='image'?'🖼️ Imagem':'📸 Publicação';card.appendChild(label);const b=document.createElement('button');b.type='button';b.textContent='⬇ Baixar';b.onclick=()=>{if(AndroidBridge?.download)AndroidBridge.download(item.type==='post'?item.url:item.url,'video','all');};card.appendChild(b);items.appendChild(card);}
+     for(const item of arr){const card=document.createElement('div');card.className='media-card';card.dataset.kind=item.type;if(item.thumb){const img=document.createElement('img');img.src=item.thumb;img.alt='Miniatura';img.loading='lazy';card.appendChild(img);}const label=document.createElement('span');label.textContent=item.type==='video'?'🎬 Vídeo':item.type==='image'?'🖼️ Imagem':'📸 Publicação';card.appendChild(label);const b=document.createElement('button');b.type='button';b.textContent='⬇ Baixar';b.onclick=()=>{if(AndroidBridge?.download)AndroidBridge.download(item.type==='post'?item.url:item.url,'video','all');};card.appendChild(b);items.appendChild(card);}
    }catch(e){notice('Falha ao interpretar prévias: '+e.message,true);}return;
  }
  previousNativeEvent(type,message);

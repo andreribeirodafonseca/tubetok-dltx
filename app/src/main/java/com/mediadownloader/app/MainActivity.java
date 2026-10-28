@@ -201,8 +201,7 @@ public class MainActivity extends Activity {
       org.json.JSONObject result=new org.json.JSONObject();result.put("url",url);
       org.json.JSONArray items=new org.json.JSONArray();
       if(url.matches("(?i)^https?://([^/]+\\.)?threads\\.(com|net)/.*")){
-        java.util.List<ThreadsExtractor.Media> found=ThreadsExtractor.resolve(url);
-        for(ThreadsExtractor.Media media:found){org.json.JSONObject item=new org.json.JSONObject();item.put("url",media.url);item.put("type",media.extension.equals("mp4")?"video":"image");item.put("thumb",media.extension.equals("mp4")?"":media.url);items.put(item);}
+        throw new java.io.IOException("Threads: extrator experimental removido por apresentar falsos resultados. A consulta ainda não está disponível; não significa que a publicação esteja vazia.");
       }else if(url.matches("(?i)^https?://(www\\.)?instagram\\.com/.*")){
         result.put("notice","O Instagram pode bloquear a consulta anônima. Tentando consultar metadados públicos do link.");
         java.net.HttpURLConnection c=(java.net.HttpURLConnection)new java.net.URL(url).openConnection();c.setConnectTimeout(12000);c.setReadTimeout(15000);c.setRequestProperty("User-Agent","Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36");
@@ -215,7 +214,7 @@ public class MainActivity extends Activity {
         else result.put("notice","Prévia pública encontrada. A listagem completa de perfis e Stories não está disponível sem acesso autorizado.");
       }else throw new java.io.IOException("Plataforma não suportada para prévia.");
       result.put("items",items);send("media_result",result.toString());
-    }catch(Exception e){Log.e("TubTok","Consulta de mídias falhou",e);String details=e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());send("media_error",details);}
+    }catch(Exception e){Log.e("TubTok","Consulta de mídias falhou",e);String details=e.getClass().getSimpleName()+": "+String.valueOf(e.getMessage());try{org.json.JSONObject error=new org.json.JSONObject();error.put("url",url);error.put("error",details);send("media_error",error.toString());}catch(Exception ignored){Log.e("TubTok","Falha ao serializar erro",ignored);}}
   }
   private void downloadVideo(String url,String mode,String lang){
     if(!initialized){send("error","Motor ainda não foi inicializado.");return;}
@@ -227,19 +226,8 @@ public class MainActivity extends Activity {
       // O redirecionamento não corrige bloqueios de fingerprint/TLS do TikTok.
       if(url.matches("(?i)^https?://(www\\.)?instagram\\.com/[^/?#]+/?([?#].*)?$"))
         throw new Exception("PROFILE_LIST_UNAVAILABLE");
-      if(mode.equals("video") && url.matches("(?i)^https?://([^/]+\\.)?threads\\.(com|net)/.*")){
-        send("progress","Consultando publicação pública do Threads...");
-        java.util.List<ThreadsExtractor.Media> media=ThreadsExtractor.resolve(url);
-        int count=0;
-        for(ThreadsExtractor.Media item:media){
-          File target=new File(dir,"threads_"+(++count)+"."+item.extension);
-          ThreadsExtractor.download(item,target);
-          String saved=saveToDownloads(target,"TubTok_Threads_"+System.currentTimeMillis()+"_"+count+"."+item.extension);
-          send("video_saved",saved);
-        }
-        send("done",count+" arquivo(s) do Threads salvo(s) em Downloads/TubTok.");
-        return;
-      }
+      if(url.matches("(?i)^https?://([^/]+\\.)?threads\\.(com|net)/.*"))
+        throw new java.io.IOException("Threads: download indisponível até integração de um extrator validado. O módulo anterior foi removido.");
       if(mode.equals("video")){
         YoutubeDLRequest req=new YoutubeDLRequest(url);
         req.addOption("-f","best[ext=mp4]/best");
